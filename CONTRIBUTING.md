@@ -17,7 +17,7 @@
 # How to Contribute
 
 All contributors are expected to follow the [Code of
-Conduct](CODE_OF_CONDUCT.md).
+Conduct](https://github.com/adbc-drivers/.github/blob/main/CODE_OF_CONDUCT.md).
 
 ## Reporting Issues and Making Feature Requests
 
@@ -26,7 +26,7 @@ https://github.com/adbc-drivers/google/issues
 
 Potential security vulnerabilities should be reported to
 [security@adbc-drivers.org](mailto:security@adbc-drivers.org) instead.  See
-[SECURITY.md](./SECURITY.md).
+the [Security Policy](https://github.com/adbc-drivers/.github/blob/main/SECURITY.md).
 
 ## Build and Test
 
