@@ -17,7 +17,7 @@
 # How to Contribute
 
 All contributors are expected to follow the [Code of
-Conduct](/?tab=coc-ov-file).
+Conduct](https://github.com/adbc-drivers/databricks?tab=coc-ov-file).
 
 ## Reporting Issues and Making Feature Requests
 
@@ -26,7 +26,7 @@ https://github.com/adbc-drivers/google/issues
 
 Potential security vulnerabilities should be reported to
 [security@adbc-drivers.org](mailto:security@adbc-drivers.org) instead.  See
-the [Security Policy](/?tab=security-ov-file).
+the [Security Policy](https://github.com/adbc-drivers/databricks?tab=security-ov-file).
 
 ## Build and Test
 
