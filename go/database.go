@@ -83,6 +83,7 @@ type databaseImpl struct {
 	oauthClientSecret string
 	oauthRefreshToken string
 	oauthU2MTimeout   time.Duration
+	oauthScopes       []string
 }
 
 func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
@@ -339,6 +340,8 @@ func (d *databaseImpl) GetOption(ctx context.Context, key string) (string, error
 		return d.oauthClientSecret, nil
 	case OptionOAuthRefreshToken:
 		return d.oauthRefreshToken, nil
+	case OptionOAuthScopes:
+		return strings.Join(d.oauthScopes, " "), nil
 	case OptionExternalBrowserTimeout:
 		if d.oauthU2MTimeout > 0 {
 			return d.oauthU2MTimeout.String(), nil
@@ -518,6 +521,8 @@ func (d *databaseImpl) SetOption(ctx context.Context, key, value string) error {
 		d.oauthClientSecret = value
 	case OptionOAuthRefreshToken:
 		d.oauthRefreshToken = value
+	case OptionOAuthScopes:
+		d.oauthScopes = parseScopes(value)
 	case OptionExternalBrowserTimeout:
 		if value == "" {
 			d.oauthU2MTimeout = 0
