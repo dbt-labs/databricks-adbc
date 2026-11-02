@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/apache/arrow-adbc/go/adbc"
+	"github.com/databricks/databricks-sdk-go/common/environment"
 	sdkconfig "github.com/databricks/databricks-sdk-go/config"
 	dbsql "github.com/databricks/databricks-sql-go"
 )
@@ -70,6 +71,16 @@ var loginMethods = map[string]loginMethod{
 			return dbsql.WithAuthenticator(d.oidcConfig(OptionValueAuthTypeFileOIDC))
 		},
 	},
+	// Microsoft Entra ID service principal on Azure Databricks. The SDK sends
+	// the Entra token and the management token on each request.
+	OptionValueAuthTypeAzureClientSecret: {
+		required: []authField{
+			{OptionAzureClientID, "azure client ID", func(d *databaseImpl) string { return d.azureClientID }},
+			{OptionAzureClientSecret, "azure client secret", func(d *databaseImpl) string { return d.azureClientSecret }},
+			{OptionAzureTenantID, "azure tenant ID", func(d *databaseImpl) string { return d.azureTenantID }},
+		},
+		build: func(d *databaseImpl) dbsql.ConnOption { return dbsql.WithAuthenticator(d.azureClientSecretConfig()) },
+	},
 }
 
 var oidcClientIDField = authField{OptionOIDCClientID, "client ID", func(d *databaseImpl) string { return d.oidcClientID }}
@@ -88,6 +99,20 @@ func (d *databaseImpl) sdkConfig() *sdkconfig.Config {
 		Host:    host,
 		Loaders: []sdkconfig.Loader{sdkconfig.ConfigAttributes},
 	}
+}
+
+// azureClientSecretConfig builds the SDK credential for an Entra ID service
+// principal. The auth type implies Azure, so the cloud is not guessed from the
+// host name. The SDK only activates this credential when the tenant is set.
+func (d *databaseImpl) azureClientSecretConfig() *sdkconfig.Config {
+	cfg := d.sdkConfig()
+	cfg.Cloud = environment.CloudAzure
+	cfg.AuthType = OptionValueAuthTypeAzureClientSecret
+	cfg.AzureClientID = d.azureClientID
+	cfg.AzureClientSecret = d.azureClientSecret
+	cfg.AzureTenantID = d.azureTenantID
+	cfg.Credentials = sdkconfig.AzureClientSecretCredentials{}
+	return cfg
 }
 
 // oidcConfig builds the SDK credential that reads the ID token from an

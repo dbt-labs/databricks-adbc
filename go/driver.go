@@ -70,10 +70,17 @@ const (
 	OptionValueAuthTypeEnvOIDC  = "env-oidc"
 	OptionValueAuthTypeFileOIDC = "file-oidc"
 
+	OptionValueAuthTypeAzureClientSecret = "azure-client-secret"
+
 	// OAuth options
 	OptionOAuthClientID     = "databricks.oauth.client_id"
 	OptionOAuthClientSecret = "databricks.oauth.client_secret"
 	OptionOAuthRefreshToken = "databricks.oauth.refresh_token"
+
+	// Azure service principal (Microsoft Entra ID) options, auth type azure-client-secret
+	OptionAzureClientID     = "databricks.azure.client_id"
+	OptionAzureClientSecret = "databricks.azure.client_secret"
+	OptionAzureTenantID     = "databricks.azure.tenant_id"
 
 	// OIDC token federation options (auth types env-oidc and file-oidc)
 	OptionOIDCClientID      = "databricks.oidc.client_id"
