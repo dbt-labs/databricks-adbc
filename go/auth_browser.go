@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,11 @@ const (
 	// OptionValueAuthTypeExternalBrowser selects browser (user-to-machine
 	// OAuth) login for databricks.auth_type.
 	OptionValueAuthTypeExternalBrowser = "external-browser"
+
+	// OptionOAuthScopes lists the scopes external-browser login asks for, in
+	// addition to the ones the driver always needs (offline_access and the
+	// cloud's SQL scope). Separate scopes with spaces or commas.
+	OptionOAuthScopes = "databricks.oauth.scopes"
 
 	// OptionExternalBrowserTimeout is how long browser login waits for the
 	// sign-in to finish, as a Go duration such as "2m".
@@ -76,8 +82,10 @@ var externalBrowserMethod = loginMethod{
 // from the database options. Nothing is contacted until the first request.
 func (d *databaseImpl) newBrowserAuthenticator() auth.Authenticator {
 	return newBrowserAuthenticator(browserLoginConfig{
-		host:    d.serverHostname,
-		timeout: d.oauthU2MTimeout,
+		host:     d.serverHostname,
+		clientID: d.oauthClientID,
+		scopes:   d.oauthScopes,
+		timeout:  d.oauthU2MTimeout,
 	})
 }
 
@@ -300,6 +308,20 @@ func writeBrowserPage(w http.ResponseWriter, title, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprintf(w, "<!doctype html><html><head><title>%s</title></head><body><h2>%s</h2><p>%s</p></body></html>",
 		html.EscapeString(title), html.EscapeString(title), html.EscapeString(msg))
+}
+
+// parseScopes splits a scope list on spaces and commas, dropping empty entries
+// and repeats.
+func parseScopes(value string) []string {
+	var scopes []string
+	seen := map[string]bool{}
+	for _, s := range strings.FieldsFunc(value, func(r rune) bool { return r == ' ' || r == ',' }) {
+		if !seen[s] {
+			seen[s] = true
+			scopes = append(scopes, s)
+		}
+	}
+	return scopes
 }
 
 func randomState(n int) (string, error) {

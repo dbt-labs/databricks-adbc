@@ -125,9 +125,14 @@ Examples:
 
   - `pat`: personal access token. Requires `databricks.access_token`.
   - `oauth-m2m`: OAuth machine-to-machine. Requires `databricks.oauth.client_id` and `databricks.oauth.client_secret`.
-  - `external-browser`: OAuth user-to-machine (U2M) login through the system browser. The driver prints the login URL and tries to open it, then waits for the redirect on `localhost:8020`. It is never inferred: set `databricks.auth_type` explicitly.
+  - `external-browser`: OAuth user-to-machine (U2M) login through the system browser. Optionally set `databricks.oauth.client_id` to use your own OAuth app and `databricks.oauth.scopes` to request more scopes. The driver prints the login URL and tries to open it, then waits for the redirect on `localhost:8020`. It is never inferred: set `databricks.auth_type` explicitly.
 
   If not set, the method is inferred: `pat` when `databricks.access_token` is set, `oauth-m2m` when a client ID or secret is set. Setting both an access token and OAuth options without `databricks.auth_type` is an error. If set, options that belong to other methods are ignored.
+
+`databricks.oauth.scopes`
+: **Values:** scopes separated by spaces or commas, such as `all-apis offline_access`. **Default:** (empty)
+
+  Scopes `external-browser` login requests. `offline_access` and the cloud's SQL scope are always added. Ignored by other auth types.
 
 `databricks.oauth.external_browser.timeout`
 : **Values:** a positive Go duration such as `90s` or `2m`. **Default:** `1m`
