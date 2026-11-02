@@ -72,6 +72,7 @@ const (
 	OptionOAuthClientID     = "databricks.oauth.client_id"
 	OptionOAuthClientSecret = "databricks.oauth.client_secret"
 	OptionOAuthRefreshToken = "databricks.oauth.refresh_token"
+	OptionOAuthScopes       = "databricks.oauth.scopes"
 
 	// Default values
 	DefaultPort    = 443

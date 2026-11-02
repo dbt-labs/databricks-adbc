@@ -16,9 +16,12 @@ package databricks
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/apache/arrow-adbc/go/adbc"
 	dbsql "github.com/databricks/databricks-sql-go"
+	"github.com/databricks/databricks-sql-go/auth"
+	"github.com/databricks/databricks-sql-go/auth/oauth/m2m"
 )
 
 // authField is an option a login method needs, read from the database.
@@ -51,9 +54,40 @@ var loginMethods = map[string]loginMethod{
 			{OptionOAuthClientSecret, "client secret", func(d *databaseImpl) string { return d.oauthClientSecret }},
 		},
 		build: func(d *databaseImpl) dbsql.ConnOption {
-			return dbsql.WithClientCredentials(d.oauthClientID, d.oauthClientSecret)
+			return dbsql.WithAuthenticator(d.newM2MAuthenticator())
 		},
 	},
+}
+
+// newM2MAuthenticator requests the configured scopes, or "all-apis" when none
+// are set, so a secret limited to other scopes (for example "sql") can log in.
+func (d *databaseImpl) newM2MAuthenticator() auth.Authenticator {
+	// The SQL client strips the URL scheme from the host; do the same here.
+	host := d.serverHostname
+	for _, scheme := range []string{"https://", "http://"} {
+		host = strings.TrimPrefix(host, scheme)
+	}
+	return m2m.NewAuthenticatorWithScopes(d.oauthClientID, d.oauthClientSecret, host, d.oauthScopes)
+}
+
+// parseScopes splits a comma or whitespace separated list of OAuth scopes.
+// Each scope must be a valid RFC 6749 scope token.
+func parseScopes(value string) ([]string, error) {
+	scopes := strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' })
+	if len(scopes) == 0 {
+		return nil, nil
+	}
+	for _, scope := range scopes {
+		for _, r := range scope {
+			if r < 0x21 || r > 0x7e || r == '"' || r == '\\' {
+				return nil, adbc.Error{
+					Code: adbc.StatusInvalidArgument,
+					Msg:  fmt.Sprintf("[db] invalid OAuth scope '%s' for '%s'", scope, OptionOAuthScopes),
+				}
+			}
+		}
+	}
+	return scopes, nil
 }
 
 // resolveLoginMethod picks the login method for the configured options and

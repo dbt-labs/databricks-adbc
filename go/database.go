@@ -82,6 +82,7 @@ type databaseImpl struct {
 	oauthClientID     string
 	oauthClientSecret string
 	oauthRefreshToken string
+	oauthScopes       []string
 }
 
 func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
@@ -338,6 +339,8 @@ func (d *databaseImpl) GetOption(ctx context.Context, key string) (string, error
 		return d.oauthClientSecret, nil
 	case OptionOAuthRefreshToken:
 		return d.oauthRefreshToken, nil
+	case OptionOAuthScopes:
+		return strings.Join(d.oauthScopes, " "), nil
 	default:
 		return d.DatabaseImplBase.GetOption(ctx, key)
 	}
@@ -512,6 +515,12 @@ func (d *databaseImpl) SetOption(ctx context.Context, key, value string) error {
 		d.oauthClientSecret = value
 	case OptionOAuthRefreshToken:
 		d.oauthRefreshToken = value
+	case OptionOAuthScopes:
+		scopes, err := parseScopes(value)
+		if err != nil {
+			return err
+		}
+		d.oauthScopes = scopes
 	default:
 		return d.DatabaseImplBase.SetOption(ctx, key, value)
 	}
