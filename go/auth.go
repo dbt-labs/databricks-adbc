@@ -81,6 +81,30 @@ var loginMethods = map[string]loginMethod{
 		},
 		build: func(d *databaseImpl) dbsql.ConnOption { return dbsql.WithAuthenticator(d.azureClientSecretConfig()) },
 	},
+	// Azure managed identity. The client ID is optional and selects a
+	// user-assigned identity.
+	OptionValueAuthTypeAzureMSI: {
+		build: func(d *databaseImpl) dbsql.ConnOption { return dbsql.WithAuthenticator(d.azureMSIConfig()) },
+	},
+	// Azure CLI: uses the current `az login` session.
+	OptionValueAuthTypeAzureCLI: {
+		build: func(d *databaseImpl) dbsql.ConnOption { return dbsql.WithAuthenticator(d.azureCLIConfig()) },
+	},
+	// Google service account key, as JSON or the path of a JSON file.
+	OptionValueAuthTypeGoogleCredentials: {
+		required: []authField{
+			{OptionGoogleCredentials, "google credentials", func(d *databaseImpl) string { return d.googleCredentials }},
+		},
+		build: func(d *databaseImpl) dbsql.ConnOption { return dbsql.WithAuthenticator(d.googleCredentialsConfig()) },
+	},
+	// Google ID token of a service account, using the application default
+	// credentials of the environment.
+	OptionValueAuthTypeGoogleID: {
+		required: []authField{
+			{OptionGoogleServiceAccount, "google service account", func(d *databaseImpl) string { return d.googleServiceAccount }},
+		},
+		build: func(d *databaseImpl) dbsql.ConnOption { return dbsql.WithAuthenticator(d.googleIDConfig()) },
+	},
 }
 
 var oidcClientIDField = authField{OptionOIDCClientID, "client ID", func(d *databaseImpl) string { return d.oidcClientID }}
@@ -112,6 +136,46 @@ func (d *databaseImpl) azureClientSecretConfig() *sdkconfig.Config {
 	cfg.AzureClientSecret = d.azureClientSecret
 	cfg.AzureTenantID = d.azureTenantID
 	cfg.Credentials = sdkconfig.AzureClientSecretCredentials{}
+	return cfg
+}
+
+// azureMSIConfig builds the SDK credential for an Azure managed identity.
+func (d *databaseImpl) azureMSIConfig() *sdkconfig.Config {
+	cfg := d.sdkConfig()
+	cfg.Cloud = environment.CloudAzure
+	cfg.AuthType = OptionValueAuthTypeAzureMSI
+	cfg.AzureUseMSI = true
+	cfg.AzureClientID = d.azureClientID
+	cfg.Credentials = sdkconfig.AzureMsiCredentials{}
+	return cfg
+}
+
+// azureCLIConfig builds the SDK credential that uses the Azure CLI session.
+func (d *databaseImpl) azureCLIConfig() *sdkconfig.Config {
+	cfg := d.sdkConfig()
+	cfg.Cloud = environment.CloudAzure
+	cfg.AuthType = OptionValueAuthTypeAzureCLI
+	cfg.Credentials = sdkconfig.AzureCliCredentials{}
+	return cfg
+}
+
+// googleCredentialsConfig builds the SDK credential for a service account key.
+func (d *databaseImpl) googleCredentialsConfig() *sdkconfig.Config {
+	cfg := d.sdkConfig()
+	cfg.Cloud = environment.CloudGCP
+	cfg.AuthType = OptionValueAuthTypeGoogleCredentials
+	cfg.GoogleCredentials = d.googleCredentials
+	cfg.Credentials = sdkconfig.GoogleCredentials{}
+	return cfg
+}
+
+// googleIDConfig builds the SDK credential for a service account ID token.
+func (d *databaseImpl) googleIDConfig() *sdkconfig.Config {
+	cfg := d.sdkConfig()
+	cfg.Cloud = environment.CloudGCP
+	cfg.AuthType = OptionValueAuthTypeGoogleID
+	cfg.GoogleServiceAccount = d.googleServiceAccount
+	cfg.Credentials = sdkconfig.GoogleDefaultCredentials{}
 	return cfg
 }
 

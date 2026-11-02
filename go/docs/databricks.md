@@ -128,13 +128,17 @@ Examples:
   - `env-oidc`: OIDC token federation. The ID token is read from the `DATABRICKS_OIDC_TOKEN` environment variable and exchanged for a Databricks token. Requires `databricks.oidc.client_id`.
   - `file-oidc`: OIDC token federation. The ID token is read from a file and exchanged for a Databricks token. Requires `databricks.oidc.client_id`.
   - `azure-client-secret`: Microsoft Entra ID service principal on Azure Databricks. Requires `databricks.azure.client_id`, `databricks.azure.client_secret` and `databricks.azure.tenant_id`.
+  - `azure-msi`: Azure managed identity. `databricks.azure.client_id` is optional and selects a user-assigned identity.
+  - `azure-cli`: the current Azure CLI (`az login`) session. Needs no options.
+  - `google-credentials`: Google service account key. Requires `databricks.google.credentials`.
+  - `google-id`: Google ID token of a service account, from the application default credentials of the environment. Requires `databricks.google.service_account`.
 
   If not set, the method is inferred: `pat` when `databricks.access_token` is set, `oauth-m2m` when a client ID or secret is set. Setting both an access token and OAuth options without `databricks.auth_type` is an error. If set, options that belong to other methods are ignored.
 
 `databricks.azure.client_id`
 : **Default:** (empty)
 
-  The application (client) ID of the Entra ID service principal. Required for `azure-client-secret`.
+  The application (client) ID of the Entra ID service principal. Required for `azure-client-secret`. For `azure-msi`, the optional client ID of a user-assigned managed identity.
 
 `databricks.azure.client_secret`
 : **Default:** (empty)
@@ -145,6 +149,16 @@ Examples:
 : **Default:** (empty)
 
   The Entra ID tenant ID. Required for `azure-client-secret`; the driver does not discover it.
+
+`databricks.google.credentials`
+: **Default:** (empty)
+
+  The Google service account key, as JSON or the path of a JSON file. Required for `google-credentials`.
+
+`databricks.google.service_account`
+: **Default:** (empty)
+
+  The email of the Google service account to get an ID token for. Required for `google-id`.
 
 `databricks.oidc.client_id`
 : **Default:** (empty)
