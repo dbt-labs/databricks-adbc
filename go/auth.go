@@ -54,6 +54,7 @@ var loginMethods = map[string]loginMethod{
 			return dbsql.WithClientCredentials(d.oauthClientID, d.oauthClientSecret)
 		},
 	},
+	OptionValueAuthTypeExternalBrowser: externalBrowserMethod,
 }
 
 // resolveLoginMethod picks the login method for the configured options and
