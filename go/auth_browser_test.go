@@ -391,13 +391,13 @@ func TestBrowserBuiltInClientPerCloud(t *testing.T) {
 }
 
 func TestExternalBrowserLoginMethod(t *testing.T) {
-	db := databaseImpl{authType: "external-browser"}
+	db := databaseImpl{auth: authConfig{authType: "external-browser"}}
 	name, _, err := db.resolveLoginMethod()
 	require.NoError(t, err)
 	require.Equal(t, "external-browser", name)
 
 	// Browser login is never inferred, so existing configurations keep their method.
-	db = databaseImpl{oauthClientID: "id"}
+	db = databaseImpl{auth: authConfig{oauthClientID: "id"}}
 	_, _, err = db.resolveLoginMethod()
 	require.ErrorContains(t, err, "client secret is required when using auth type 'oauth-m2m'")
 }
@@ -435,9 +435,8 @@ func isolateHome(t *testing.T) {
 func TestExternalBrowserBuildsConnectorOption(t *testing.T) {
 	isolateHome(t)
 	db := &databaseImpl{
-		serverHostname: "x.cloud.databricks.com",
-		httpPath:       "/sql/1.0/warehouses/abc",
-		authType:       "external-browser",
+		conn: connConfig{serverHostname: "x.cloud.databricks.com", httpPath: "/sql/1.0/warehouses/abc"},
+		auth: authConfig{authType: "external-browser"},
 	}
 	opts, err := db.resolveConnectionOptions()
 	require.NoError(t, err)
@@ -500,7 +499,7 @@ func TestBrowserClientAndScopeOptions(t *testing.T) {
 	require.Equal(t, []string{"all-apis", "offline_access"}, a.cfg.scopes)
 
 	// Without the options the built-in client is used, as before.
-	a = (&databaseImpl{serverHostname: "x.cloud.databricks.com"}).newBrowserAuthenticator().(*browserAuthenticator)
+	a = (&databaseImpl{conn: connConfig{serverHostname: "x.cloud.databricks.com"}}).newBrowserAuthenticator().(*browserAuthenticator)
 	id, err := resolveBrowserClientID(a.cfg.host, a.cfg.clientID)
 	require.NoError(t, err)
 	require.Equal(t, "databricks-sql-connector", id)
@@ -528,7 +527,7 @@ func TestBrowserRedirectURLOption(t *testing.T) {
 
 func TestBrowserRedirectURLReachesAuthenticator(t *testing.T) {
 	isolateHome(t)
-	db := &databaseImpl{oauthRedirectURL: "localhost:9000"}
+	db := &databaseImpl{auth: authConfig{oauthRedirectURL: "localhost:9000"}}
 	a := db.newBrowserAuthenticator().(*browserAuthenticator)
 	require.Equal(t, "localhost:9000", a.cfg.redirectURL)
 }

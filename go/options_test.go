@@ -78,37 +78,37 @@ func validatedOptionCases(t *testing.T) map[string]struct {
 		OptionPort: {
 			good:  []optionValue{{"443", "443"}, {"1", "1"}, {"65535", "65535"}},
 			bad:   []string{"0", "65536", "-1", "abc", "", "44.3"},
-			state: func(d *databaseImpl) any { return d.port },
+			state: func(d *databaseImpl) any { return d.conn.port },
 		},
 		OptionQueryTimeout: {
 			good:  []optionValue{{"30s", "30s"}, {"2m", "2m0s"}, {"1h30m", "1h30m0s"}},
 			bad:   []string{"soon", "30", "1 minute"},
-			state: func(d *databaseImpl) any { return d.queryTimeout },
+			state: func(d *databaseImpl) any { return d.query.queryTimeout },
 		},
 		OptionMaxRows: {
 			good:  []optionValue{{"1000", "1000"}, {"1", "1"}},
 			bad:   []string{"many", "1.5", "10k"},
-			state: func(d *databaseImpl) any { return d.maxRows },
+			state: func(d *databaseImpl) any { return d.query.maxRows },
 		},
 		OptionQueryRetryCount: {
 			good:  []optionValue{{"3", "3"}, {"1", "1"}},
 			bad:   []string{"often", "1.5"},
-			state: func(d *databaseImpl) any { return d.queryRetryCount },
+			state: func(d *databaseImpl) any { return d.query.queryRetryCount },
 		},
 		OptionDownloadThreadCount: {
 			good:  []optionValue{{"4", "4"}, {"1", "1"}},
 			bad:   []string{"many", "2.5"},
-			state: func(d *databaseImpl) any { return d.downloadThreadCount },
+			state: func(d *databaseImpl) any { return d.query.downloadThreadCount },
 		},
 		OptionSSLMode: {
 			good:  []optionValue{{"require", "require"}, {"insecure", "insecure"}, {"REQUIRE", "require"}},
 			bad:   []string{"verify-full", "disable", "true"},
-			state: func(d *databaseImpl) any { return [2]any{d.sslMode, d.sslInsecure} },
+			state: func(d *databaseImpl) any { return [2]any{d.tls.sslMode, d.tls.sslInsecure} },
 		},
 		OptionSSLRootCert: {
 			good:  []optionValue{{cert, cert}},
 			bad:   []string{filepath.Join(t.TempDir(), "missing.pem"), notCert},
-			state: func(d *databaseImpl) any { return [2]any{d.sslRootCert, d.sslCertPool} },
+			state: func(d *databaseImpl) any { return [2]any{d.tls.sslRootCert, d.tls.sslCertPool} },
 		},
 	}
 }
@@ -218,6 +218,6 @@ func TestSetOptionsURIExcludesOtherOptions(t *testing.T) {
 	var adbcErr adbc.Error
 	require.ErrorAs(t, err, &adbcErr)
 	require.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
-	require.Equal(t, "", db.uri)
-	require.Equal(t, "", db.catalog)
+	require.Equal(t, "", db.conn.uri)
+	require.Equal(t, "", db.conn.catalog)
 }

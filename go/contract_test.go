@@ -58,7 +58,7 @@ func TestUserAgentReachesConnector(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "", connectorUserAgentEntry(t, opts))
 
-	db.userAgent = "dbt"
+	db.conn.userAgent = "dbt"
 	opts, err = db.resolveConnectionOptions()
 	require.NoError(t, err)
 	require.Equal(t, "dbt", connectorUserAgentEntry(t, opts))
@@ -102,8 +102,8 @@ func openTestConnection(t *testing.T, db *databaseImpl) (adbc.ConnectionWithCont
 	capture := &tagCaptureConn{}
 	name := fmt.Sprintf("databricks-contract-test-%d", parameterTestDriverCounter.Add(1))
 	sql.Register(name, tagCaptureDriver{conn: capture})
-	db.newPool = func(context.Context) (*sql.DB, error) { return sql.Open(name, "") }
-	db.needsRefresh = true
+	db.pool.newPool = func(context.Context) (*sql.DB, error) { return sql.Open(name, "") }
+	db.pool.needsRefresh = true
 	conn, err := db.Open(context.Background())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })

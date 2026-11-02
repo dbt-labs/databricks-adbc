@@ -90,11 +90,11 @@ var externalBrowserMethod = loginMethod{
 // from the database options. Nothing is contacted until the first request.
 func (d *databaseImpl) newBrowserAuthenticator() auth.Authenticator {
 	return newBrowserAuthenticator(browserLoginConfig{
-		host:        d.serverHostname,
-		clientID:    d.oauthClientID,
-		scopes:      d.oauthScopes,
-		redirectURL: d.oauthRedirectURL,
-		timeout:     d.oauthU2MTimeout,
+		host:        d.conn.serverHostname,
+		clientID:    d.auth.oauthClientID,
+		scopes:      d.auth.oauthScopes,
+		redirectURL: d.auth.oauthRedirectURL,
+		timeout:     d.auth.oauthU2MTimeout,
 	})
 }
 

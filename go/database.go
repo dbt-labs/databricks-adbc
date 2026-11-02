@@ -49,12 +49,10 @@ const (
 	DEFAULT_RETRY_WAIT_MAX = 30 * time.Second
 )
 
-type databaseImpl struct {
-	driverbase.DatabaseImplBase
-
-	// Connection Pool. mu serialises pool start-up and Close so that concurrent
-	// Open calls cannot each run a login (two browser logins would race for the
-	// same local callback port).
+// poolState is the connection pool. mu serialises pool start-up and Close so
+// that concurrent Open calls cannot each run a login (two browser logins would
+// race for the same local callback port).
+type poolState struct {
 	mu           sync.Mutex
 	db           *sql.DB
 	needsRefresh bool // Whether we need to re-initialize
@@ -62,40 +60,44 @@ type databaseImpl struct {
 	// newPool creates the connection pool; nil means initializeConnectionPool.
 	// Tests replace it to observe start-up without a workspace.
 	newPool func(ctx context.Context) (*sql.DB, error)
+}
 
-	// Connection parameters
+// connConfig is where the driver connects and the client it reports.
+type connConfig struct {
 	uri            string
 	serverHostname string
 	httpPath       string
-	accessToken    string
-	authType       string
 	userAgent      string
 	port           int
 	catalog        string
 	schema         string
+}
 
-	// Query options
+// queryConfig holds the query options.
+type queryConfig struct {
 	queryTimeout        time.Duration
 	maxRows             int
 	queryRetryCount     int
 	downloadThreadCount int
+}
 
-	// TLS/SSL options
+// tlsConfig holds the TLS/SSL options.
+type tlsConfig struct {
 	sslMode     string
 	sslRootCert string
 	sslCertPool *x509.CertPool
 	sslInsecure bool
+}
+
+// authConfig holds the credentials and the options of every login method.
+type authConfig struct {
+	accessToken string
+	authType    string
 
 	// OAuth options
 	oauthClientID     string
 	oauthClientSecret string
 	oauthRefreshToken string
-
-	// Default query tags, keyed by tag name
-	queryTags map[string]string
-
-	// Session parameters sent when the session opens (databricks.session_param.<name>).
-	sessionParams map[string]string
 
 	// Azure service principal options
 	azureClientID     string
@@ -114,15 +116,31 @@ type databaseImpl struct {
 	oauthRedirectURL  string
 }
 
+type databaseImpl struct {
+	driverbase.DatabaseImplBase
+
+	pool  poolState
+	conn  connConfig
+	query queryConfig
+	tls   tlsConfig
+	auth  authConfig
+
+	// Default query tags, keyed by tag name
+	queryTags map[string]string
+
+	// Session parameters sent when the session opens (databricks.session_param.<name>).
+	sessionParams map[string]string
+}
+
 func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
-	if d.serverHostname == "" {
+	if d.conn.serverHostname == "" {
 		return nil, adbc.Error{
 			Code: adbc.StatusInvalidArgument,
 			Msg:  "server hostname is required",
 		}
 	}
 
-	if d.httpPath == "" {
+	if d.conn.httpPath == "" {
 		return nil, adbc.Error{
 			Code: adbc.StatusInvalidArgument,
 			Msg:  "HTTP path is required",
@@ -135,42 +153,42 @@ func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
 	}
 
 	opts := []dbsql.ConnOption{
-		dbsql.WithServerHostname(d.serverHostname),
-		dbsql.WithHTTPPath(d.httpPath),
+		dbsql.WithServerHostname(d.conn.serverHostname),
+		dbsql.WithHTTPPath(d.conn.httpPath),
 		dbsql.WithArrowNativeDecimal(true),
 		login.connOption(loginName, d),
 	}
 
 	// Client name appended to the User-Agent of the requests the driver makes
-	if d.userAgent != "" {
-		opts = append(opts, dbsql.WithUserAgentEntry(d.userAgent))
+	if d.conn.userAgent != "" {
+		opts = append(opts, dbsql.WithUserAgentEntry(d.conn.userAgent))
 	}
 
 	// Validate and set custom port
 	// Defaults to 443
-	if d.port != 0 {
-		opts = append(opts, dbsql.WithPort(d.port))
+	if d.conn.port != 0 {
+		opts = append(opts, dbsql.WithPort(d.conn.port))
 	} else {
 		opts = append(opts, dbsql.WithPort(DEFAULT_PORT))
 	}
 
 	// Default namespace for queries (catalog/schema)
-	if d.catalog != "" || d.schema != "" {
-		opts = append(opts, dbsql.WithInitialNamespace(d.catalog, d.schema))
+	if d.conn.catalog != "" || d.conn.schema != "" {
+		opts = append(opts, dbsql.WithInitialNamespace(d.conn.catalog, d.conn.schema))
 	}
 
-	if d.queryTimeout > 0 {
-		opts = append(opts, dbsql.WithTimeout(d.queryTimeout))
+	if d.query.queryTimeout > 0 {
+		opts = append(opts, dbsql.WithTimeout(d.query.queryTimeout))
 	}
 
-	if d.maxRows > 0 {
-		opts = append(opts, dbsql.WithMaxRows(int(d.maxRows)))
+	if d.query.maxRows > 0 {
+		opts = append(opts, dbsql.WithMaxRows(int(d.query.maxRows)))
 	}
-	if d.queryRetryCount >= 0 {
-		opts = append(opts, dbsql.WithRetries(d.queryRetryCount, DEFAULT_RETRY_WAIT_MIN, DEFAULT_RETRY_WAIT_MAX))
+	if d.query.queryRetryCount >= 0 {
+		opts = append(opts, dbsql.WithRetries(d.query.queryRetryCount, DEFAULT_RETRY_WAIT_MIN, DEFAULT_RETRY_WAIT_MAX))
 	}
-	if d.downloadThreadCount > 0 {
-		opts = append(opts, dbsql.WithMaxDownloadThreads(d.downloadThreadCount))
+	if d.query.downloadThreadCount > 0 {
+		opts = append(opts, dbsql.WithMaxDownloadThreads(d.query.downloadThreadCount))
 	}
 
 	// TLS/SSL handling
@@ -178,16 +196,16 @@ func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
 	// TLS config is needed. These settings match the defaults from
 	// databricks-sql-go's PooledTransport to ensure reliable connections
 	// for large result set downloads.
-	if d.sslCertPool != nil || d.sslInsecure {
+	if d.tls.sslCertPool != nil || d.tls.sslInsecure {
 		tlsConfig := &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		}
 
-		if d.sslCertPool != nil {
-			tlsConfig.RootCAs = d.sslCertPool
+		if d.tls.sslCertPool != nil {
+			tlsConfig.RootCAs = d.tls.sslCertPool
 		}
 
-		if d.sslInsecure {
+		if d.tls.sslInsecure {
 			tlsConfig.InsecureSkipVerify = true
 		}
 
@@ -224,7 +242,7 @@ func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
 }
 
 func (d *databaseImpl) resolveConnectionDSN() (string, error) {
-	dsn := d.uri
+	dsn := d.conn.uri
 	if !strings.HasPrefix(dsn, "https://") && !strings.HasPrefix(dsn, "http://") {
 		dsn = "https://" + dsn
 	}
@@ -247,7 +265,7 @@ func (d *databaseImpl) initializeConnectionPool(ctx context.Context) (*sql.DB, e
 	var db *sql.DB
 
 	// Use URI if provided
-	if d.uri != "" {
+	if d.conn.uri != "" {
 		dsn, err := d.resolveConnectionDSN()
 		if err != nil {
 			return nil, err
@@ -286,16 +304,16 @@ func (d *databaseImpl) initializeConnectionPool(ctx context.Context) (*sql.DB, e
 // not exist yet or an option changed. Callers share one start-up: the lock is
 // held while the pool is created, so concurrent callers wait for it and reuse it.
 func (d *databaseImpl) getOrCreatePool(ctx context.Context) (*sql.DB, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.pool.mu.Lock()
+	defer d.pool.mu.Unlock()
 
-	if d.db != nil && !d.needsRefresh {
-		return d.db, nil
+	if d.pool.db != nil && !d.pool.needsRefresh {
+		return d.pool.db, nil
 	}
 
 	newPool := d.initializeConnectionPool
-	if d.newPool != nil {
-		newPool = d.newPool
+	if d.pool.newPool != nil {
+		newPool = d.pool.newPool
 	}
 	db, err := newPool(ctx)
 	if err != nil {
@@ -303,16 +321,16 @@ func (d *databaseImpl) getOrCreatePool(ctx context.Context) (*sql.DB, error) {
 	}
 
 	// Close the existing connection pool
-	if d.db != nil {
-		if err := d.db.Close(); err != nil {
+	if d.pool.db != nil {
+		if err := d.pool.db.Close(); err != nil {
 			_ = db.Close()
 			return nil, err
 		}
 	}
 
-	d.db = db
-	d.needsRefresh = false
-	return d.db, nil
+	d.pool.db = db
+	d.pool.needsRefresh = false
+	return d.pool.db, nil
 }
 
 func (d *databaseImpl) Open(ctx context.Context) (adbc.ConnectionWithContext, error) {
@@ -328,8 +346,8 @@ func (d *databaseImpl) Open(ctx context.Context) (adbc.ConnectionWithContext, er
 
 	conn := &connectionImpl{
 		ConnectionImplBase: driverbase.NewConnectionImplBase(&d.DatabaseImplBase),
-		catalog:            d.catalog,
-		dbSchema:           d.schema,
+		catalog:            d.conn.catalog,
+		dbSchema:           d.conn.schema,
 		queryTags:          maps.Clone(d.queryTags),
 		conn:               c,
 	}
@@ -344,14 +362,14 @@ func (d *databaseImpl) Open(ctx context.Context) (adbc.ConnectionWithContext, er
 }
 
 func (d *databaseImpl) Close(ctx context.Context) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.pool.mu.Lock()
+	defer d.pool.mu.Unlock()
 	defer func() {
-		d.needsRefresh = true
-		d.db = nil
+		d.pool.needsRefresh = true
+		d.pool.db = nil
 	}()
-	if d.db != nil {
-		return d.db.Close()
+	if d.pool.db != nil {
+		return d.pool.db.Close()
 	}
 	return nil
 }
@@ -377,7 +395,7 @@ func (d *databaseImpl) GetOption(ctx context.Context, key string) (string, error
 
 func (d *databaseImpl) SetOptions(ctx context.Context, options map[string]string) error {
 	// We need to re-initialize the db/connection pool if options change
-	d.needsRefresh = true
+	d.pool.needsRefresh = true
 
 	hasURI := false
 	hasOtherOptions := false
@@ -408,7 +426,7 @@ func (d *databaseImpl) SetOptions(ctx context.Context, options map[string]string
 
 func (d *databaseImpl) SetOption(ctx context.Context, key, value string) error {
 	// We need to re-initialize the db/connection pool if options change
-	d.needsRefresh = true
+	d.pool.needsRefresh = true
 	if def, ok := databaseOptions[key]; ok {
 		return def.set(d, value)
 	}

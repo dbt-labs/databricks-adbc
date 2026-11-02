@@ -29,7 +29,7 @@ import (
 func TestLoginMatrix(t *testing.T) {
 	isolateHome(t)
 	newBase := func() *databaseImpl {
-		return &databaseImpl{serverHostname: "x.cloud.databricks.com", httpPath: "/sql/1.0/warehouses/abc"}
+		return &databaseImpl{conn: connConfig{serverHostname: "x.cloud.databricks.com", httpPath: "/sql/1.0/warehouses/abc"}}
 	}
 	with := func(f func(d *databaseImpl)) *databaseImpl {
 		d := newBase()
@@ -41,19 +41,23 @@ func TestLoginMatrix(t *testing.T) {
 		db      *databaseImpl
 		wantErr string // empty: the options build
 	}{
-		{"pat", with(func(d *databaseImpl) { d.authType, d.accessToken = "pat", "t" }), ""},
-		{"pat missing token", with(func(d *databaseImpl) { d.authType = "pat" }), "access token is required when using auth type 'pat'"},
-		{"oauth-m2m", with(func(d *databaseImpl) { d.authType, d.oauthClientID, d.oauthClientSecret = "oauth-m2m", "i", "s" }), ""},
-		{"oauth-m2m missing secret", with(func(d *databaseImpl) { d.authType, d.oauthClientID = "oauth-m2m", "i" }), "client secret is required when using auth type 'oauth-m2m'"},
-		{"external-browser needs nothing", with(func(d *databaseImpl) { d.authType = "external-browser" }), ""},
-		{"external-browser ignores a token", with(func(d *databaseImpl) { d.authType, d.accessToken = "external-browser", "t" }), ""},
+		{"pat", with(func(d *databaseImpl) { d.auth.authType, d.auth.accessToken = "pat", "t" }), ""},
+		{"pat missing token", with(func(d *databaseImpl) { d.auth.authType = "pat" }), "access token is required when using auth type 'pat'"},
+		{"oauth-m2m", with(func(d *databaseImpl) {
+			d.auth.authType, d.auth.oauthClientID, d.auth.oauthClientSecret = "oauth-m2m", "i", "s"
+		}), ""},
+		{"oauth-m2m missing secret", with(func(d *databaseImpl) { d.auth.authType, d.auth.oauthClientID = "oauth-m2m", "i" }), "client secret is required when using auth type 'oauth-m2m'"},
+		{"external-browser needs nothing", with(func(d *databaseImpl) { d.auth.authType = "external-browser" }), ""},
+		{"external-browser ignores a token", with(func(d *databaseImpl) { d.auth.authType, d.auth.accessToken = "external-browser", "t" }), ""},
 		{"external-browser with client and scopes", with(func(d *databaseImpl) {
-			d.authType, d.oauthClientID, d.oauthScopes, d.oauthRedirectURL = "external-browser", "mine", []string{"all-apis"}, "localhost:9000"
+			d.auth.authType, d.auth.oauthClientID, d.auth.oauthScopes, d.auth.oauthRedirectURL = "external-browser", "mine", []string{"all-apis"}, "localhost:9000"
 		}), ""},
 		{"nothing set and no auth type", newBase(), "access token or OAuth config is required"},
-		{"unknown auth type", with(func(d *databaseImpl) { d.authType = "kerberos" }), "unknown auth type 'kerberos'"},
-		{"token and client credentials without auth type", with(func(d *databaseImpl) { d.accessToken, d.oauthClientID, d.oauthClientSecret = "t", "i", "s" }), "cannot specify both"},
-		{"client ID alone is never browser login", with(func(d *databaseImpl) { d.oauthClientID = "i" }), "client secret is required when using auth type 'oauth-m2m'"},
+		{"unknown auth type", with(func(d *databaseImpl) { d.auth.authType = "kerberos" }), "unknown auth type 'kerberos'"},
+		{"token and client credentials without auth type", with(func(d *databaseImpl) {
+			d.auth.accessToken, d.auth.oauthClientID, d.auth.oauthClientSecret = "t", "i", "s"
+		}), "cannot specify both"},
+		{"client ID alone is never browser login", with(func(d *databaseImpl) { d.auth.oauthClientID = "i" }), "client secret is required when using auth type 'oauth-m2m'"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

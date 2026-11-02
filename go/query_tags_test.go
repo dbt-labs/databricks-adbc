@@ -100,9 +100,8 @@ func TestResolveConnectionOptionsQueryTags(t *testing.T) {
 	ctx := context.Background()
 	newDB := func() *databaseImpl {
 		return &databaseImpl{
-			serverHostname: "example.cloud.databricks.com",
-			httpPath:       "/sql/1.0/warehouses/abc",
-			accessToken:    "token",
+			conn: connConfig{serverHostname: "example.cloud.databricks.com", httpPath: "/sql/1.0/warehouses/abc"},
+			auth: authConfig{accessToken: "token"},
 		}
 	}
 

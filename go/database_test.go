@@ -56,11 +56,11 @@ func TestResolveConnectionDSN(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			database := &databaseImpl{uri: test.dsn}
+			database := &databaseImpl{conn: connConfig{uri: test.dsn}}
 			dsn, err := database.resolveConnectionDSN()
 			require.NoError(t, err)
 			require.Equal(t, test.expected, dsn)
-			require.Equal(t, test.dsn, database.uri)
+			require.Equal(t, test.dsn, database.conn.uri)
 		})
 	}
 }
@@ -71,7 +71,7 @@ func TestResolveConnectionDSNRejectsInvalidURIs(t *testing.T) {
 		"localhost:443/sql/1.0/warehouses/test?schema=%zz",
 	} {
 		t.Run(dsn, func(t *testing.T) {
-			database := &databaseImpl{uri: dsn}
+			database := &databaseImpl{conn: connConfig{uri: dsn}}
 			_, err := database.resolveConnectionDSN()
 			requireADBCStatus(t, err, adbc.StatusInvalidArgument)
 		})
@@ -87,8 +87,8 @@ func (stubConnector) Driver() driver.Driver                        { return nil 
 
 func TestGetOrCreatePoolSerialisesStartup(t *testing.T) {
 	var started, inFlight, maxInFlight atomic.Int32
-	db := &databaseImpl{needsRefresh: true}
-	db.newPool = func(context.Context) (*sql.DB, error) {
+	db := &databaseImpl{pool: poolState{needsRefresh: true}}
+	db.pool.newPool = func(context.Context) (*sql.DB, error) {
 		started.Add(1)
 		n := inFlight.Add(1)
 		for {
@@ -121,10 +121,10 @@ func TestGetOrCreatePoolSerialisesStartup(t *testing.T) {
 	}
 	require.EqualValues(t, 1, started.Load(), "pool must start once, not once per caller")
 	require.EqualValues(t, 1, maxInFlight.Load())
-	require.False(t, db.needsRefresh)
+	require.False(t, db.pool.needsRefresh)
 
 	// An option change makes the next call build a new pool and close the old one.
-	db.needsRefresh = true
+	db.pool.needsRefresh = true
 	next, err := db.getOrCreatePool(context.Background())
 	require.NoError(t, err)
 	require.NotSame(t, pools[0], next)
@@ -132,7 +132,7 @@ func TestGetOrCreatePoolSerialisesStartup(t *testing.T) {
 }
 
 func newSessionParamDatabase() *databaseImpl {
-	return &databaseImpl{serverHostname: "x.cloud.databricks.com", httpPath: "/sql/1.0/warehouses/w", accessToken: "tok"}
+	return &databaseImpl{conn: connConfig{serverHostname: "x.cloud.databricks.com", httpPath: "/sql/1.0/warehouses/w"}, auth: authConfig{accessToken: "tok"}}
 }
 
 func TestSessionParamOptions(t *testing.T) {

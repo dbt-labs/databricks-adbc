@@ -55,21 +55,21 @@ type sdkLogin struct {
 	apply func(d *databaseImpl, cfg *sdkconfig.Config)
 }
 
-var oidcClientIDField = authField{OptionOIDCClientID, "client ID", func(d *databaseImpl) string { return d.oidcClientID }}
+var oidcClientIDField = authField{OptionOIDCClientID, "client ID", func(d *databaseImpl) string { return d.auth.oidcClientID }}
 
 var loginMethods = map[string]loginMethod{
 	OptionValueAuthTypePAT: {
 		required: []authField{
-			{OptionAccessToken, "access token", func(d *databaseImpl) string { return d.accessToken }},
+			{OptionAccessToken, "access token", func(d *databaseImpl) string { return d.auth.accessToken }},
 		},
 		build: func(d *databaseImpl) dbsql.ConnOption {
-			return dbsql.WithAccessToken(d.accessToken)
+			return dbsql.WithAccessToken(d.auth.accessToken)
 		},
 	},
 	OptionValueAuthTypeOAuthM2M: {
 		required: []authField{
-			{OptionOAuthClientID, "client ID", func(d *databaseImpl) string { return d.oauthClientID }},
-			{OptionOAuthClientSecret, "client secret", func(d *databaseImpl) string { return d.oauthClientSecret }},
+			{OptionOAuthClientID, "client ID", func(d *databaseImpl) string { return d.auth.oauthClientID }},
+			{OptionOAuthClientSecret, "client secret", func(d *databaseImpl) string { return d.auth.oauthClientSecret }},
 		},
 		optional: []string{OptionOAuthScopes},
 		build: func(d *databaseImpl) dbsql.ConnOption {
@@ -83,7 +83,7 @@ var loginMethods = map[string]loginMethod{
 		required: []authField{oidcClientIDField},
 		sdk: &sdkLogin{
 			credentials: sdkconfig.EnvOIDCCredentials{},
-			apply:       func(d *databaseImpl, cfg *sdkconfig.Config) { cfg.ClientID = d.oidcClientID },
+			apply:       func(d *databaseImpl, cfg *sdkconfig.Config) { cfg.ClientID = d.auth.oidcClientID },
 		},
 	},
 	OptionValueAuthTypeFileOIDC: {
@@ -92,9 +92,9 @@ var loginMethods = map[string]loginMethod{
 		sdk: &sdkLogin{
 			credentials: sdkconfig.FileOIDCCredentials{},
 			apply: func(d *databaseImpl, cfg *sdkconfig.Config) {
-				cfg.ClientID = d.oidcClientID
+				cfg.ClientID = d.auth.oidcClientID
 				// When unset, the SDK falls back to DATABRICKS_OIDC_TOKEN_FILEPATH.
-				cfg.OIDCTokenFilepath = d.oidcTokenFilepath
+				cfg.OIDCTokenFilepath = d.auth.oidcTokenFilepath
 			},
 		},
 	},
@@ -102,17 +102,17 @@ var loginMethods = map[string]loginMethod{
 	// activates this credential when the tenant is set, so it is required.
 	OptionValueAuthTypeAzureClientSecret: {
 		required: []authField{
-			{OptionAzureClientID, "azure client ID", func(d *databaseImpl) string { return d.azureClientID }},
-			{OptionAzureClientSecret, "azure client secret", func(d *databaseImpl) string { return d.azureClientSecret }},
-			{OptionAzureTenantID, "azure tenant ID", func(d *databaseImpl) string { return d.azureTenantID }},
+			{OptionAzureClientID, "azure client ID", func(d *databaseImpl) string { return d.auth.azureClientID }},
+			{OptionAzureClientSecret, "azure client secret", func(d *databaseImpl) string { return d.auth.azureClientSecret }},
+			{OptionAzureTenantID, "azure tenant ID", func(d *databaseImpl) string { return d.auth.azureTenantID }},
 		},
 		sdk: &sdkLogin{
 			cloud:       environment.CloudAzure,
 			credentials: sdkconfig.AzureClientSecretCredentials{},
 			apply: func(d *databaseImpl, cfg *sdkconfig.Config) {
-				cfg.AzureClientID = d.azureClientID
-				cfg.AzureClientSecret = d.azureClientSecret
-				cfg.AzureTenantID = d.azureTenantID
+				cfg.AzureClientID = d.auth.azureClientID
+				cfg.AzureClientSecret = d.auth.azureClientSecret
+				cfg.AzureTenantID = d.auth.azureTenantID
 			},
 		},
 	},
@@ -125,7 +125,7 @@ var loginMethods = map[string]loginMethod{
 			credentials: sdkconfig.AzureMsiCredentials{},
 			apply: func(d *databaseImpl, cfg *sdkconfig.Config) {
 				cfg.AzureUseMSI = true
-				cfg.AzureClientID = d.azureClientID
+				cfg.AzureClientID = d.auth.azureClientID
 			},
 		},
 	},
@@ -136,24 +136,24 @@ var loginMethods = map[string]loginMethod{
 	// Google service account key, as JSON or the path of a JSON file.
 	OptionValueAuthTypeGoogleCredentials: {
 		required: []authField{
-			{OptionGoogleCredentials, "google credentials", func(d *databaseImpl) string { return d.googleCredentials }},
+			{OptionGoogleCredentials, "google credentials", func(d *databaseImpl) string { return d.auth.googleCredentials }},
 		},
 		sdk: &sdkLogin{
 			cloud:       environment.CloudGCP,
 			credentials: sdkconfig.GoogleCredentials{},
-			apply:       func(d *databaseImpl, cfg *sdkconfig.Config) { cfg.GoogleCredentials = d.googleCredentials },
+			apply:       func(d *databaseImpl, cfg *sdkconfig.Config) { cfg.GoogleCredentials = d.auth.googleCredentials },
 		},
 	},
 	// Google ID token of a service account, from the application default
 	// credentials of the environment.
 	OptionValueAuthTypeGoogleID: {
 		required: []authField{
-			{OptionGoogleServiceAccount, "google service account", func(d *databaseImpl) string { return d.googleServiceAccount }},
+			{OptionGoogleServiceAccount, "google service account", func(d *databaseImpl) string { return d.auth.googleServiceAccount }},
 		},
 		sdk: &sdkLogin{
 			cloud:       environment.CloudGCP,
 			credentials: sdkconfig.GoogleDefaultCredentials{},
-			apply:       func(d *databaseImpl, cfg *sdkconfig.Config) { cfg.GoogleServiceAccount = d.googleServiceAccount },
+			apply:       func(d *databaseImpl, cfg *sdkconfig.Config) { cfg.GoogleServiceAccount = d.auth.googleServiceAccount },
 		},
 	},
 }
@@ -183,7 +183,7 @@ func splitHost(host string) (scheme, name string) {
 // change the login method. Because auth_type is always set, credentials in
 // other DATABRICKS_* variables (such as DATABRICKS_TOKEN) are ignored.
 func (d *databaseImpl) sdkConfig(name string, login *sdkLogin) *sdkconfig.Config {
-	scheme, host := splitHost(d.serverHostname)
+	scheme, host := splitHost(d.conn.serverHostname)
 	cfg := &sdkconfig.Config{
 		Host:        scheme + "://" + host,
 		Loaders:     []sdkconfig.Loader{sdkconfig.ConfigAttributes},
@@ -208,8 +208,8 @@ func (m loginMethod) connOption(name string, d *databaseImpl) dbsql.ConnOption {
 // newM2MAuthenticator requests the configured scopes, or "all-apis" when none
 // are set, so a secret limited to other scopes (for example "sql") can log in.
 func (d *databaseImpl) newM2MAuthenticator() auth.Authenticator {
-	_, host := splitHost(d.serverHostname)
-	return m2m.NewAuthenticatorWithScopes(d.oauthClientID, d.oauthClientSecret, host, d.oauthScopes)
+	_, host := splitHost(d.conn.serverHostname)
+	return m2m.NewAuthenticatorWithScopes(d.auth.oauthClientID, d.auth.oauthClientSecret, host, d.auth.oauthScopes)
 }
 
 // parseScopes splits a comma or whitespace separated list of OAuth scopes.
@@ -241,21 +241,21 @@ func parseScopes(value string) ([]string, error) {
 // auth_type existed: an access token means "pat", a client ID or secret means
 // "oauth-m2m".
 func (d *databaseImpl) resolveLoginMethod() (string, loginMethod, error) {
-	name := d.authType
+	name := d.auth.authType
 	if name == "" {
-		hasOAuth := d.oauthClientID != "" || d.oauthClientSecret != ""
+		hasOAuth := d.auth.oauthClientID != "" || d.auth.oauthClientSecret != ""
 		switch {
-		case d.accessToken == "" && !hasOAuth:
+		case d.auth.accessToken == "" && !hasOAuth:
 			return "", loginMethod{}, adbc.Error{
 				Code: adbc.StatusInvalidArgument,
 				Msg:  "[db] access token or OAuth config is required",
 			}
-		case d.accessToken != "" && hasOAuth:
+		case d.auth.accessToken != "" && hasOAuth:
 			return "", loginMethod{}, adbc.Error{
 				Code: adbc.StatusInvalidArgument,
 				Msg:  "[db] cannot specify both access token and OAuth config",
 			}
-		case d.accessToken != "":
+		case d.auth.accessToken != "":
 			name = OptionValueAuthTypePAT
 		default:
 			name = OptionValueAuthTypeOAuthM2M

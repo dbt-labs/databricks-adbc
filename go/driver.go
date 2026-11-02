@@ -141,8 +141,8 @@ func (d *driverImpl) NewDatabaseWithContext(ctx context.Context, opts map[string
 
 	db := &databaseImpl{
 		DatabaseImplBase: dbBase,
-		port:             DefaultPort,
-		sslMode:          DefaultSSLMode,
+		conn:             connConfig{port: DefaultPort},
+		tls:              tlsConfig{sslMode: DefaultSSLMode},
 	}
 
 	if err := db.SetOptions(ctx, opts); err != nil {

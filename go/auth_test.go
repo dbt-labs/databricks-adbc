@@ -36,17 +36,17 @@ func TestResolveLoginMethod(t *testing.T) {
 		want    string
 		wantErr string
 	}{
-		{name: "token is inferred as pat", db: &databaseImpl{accessToken: "tok"}, want: "pat"},
-		{name: "client credentials are inferred as oauth-m2m", db: &databaseImpl{oauthClientID: "id", oauthClientSecret: "secret"}, want: "oauth-m2m"},
+		{name: "token is inferred as pat", db: &databaseImpl{auth: authConfig{accessToken: "tok"}}, want: "pat"},
+		{name: "client credentials are inferred as oauth-m2m", db: &databaseImpl{auth: authConfig{oauthClientID: "id", oauthClientSecret: "secret"}}, want: "oauth-m2m"},
 		{name: "nothing set", db: &databaseImpl{}, wantErr: "access token or OAuth config is required"},
-		{name: "token and client credentials", db: &databaseImpl{accessToken: "tok", oauthClientID: "id", oauthClientSecret: "secret"}, wantErr: "cannot specify both access token and OAuth config"},
-		{name: "inferred oauth-m2m without secret", db: &databaseImpl{oauthClientID: "id"}, wantErr: "client secret is required when using auth type 'oauth-m2m'. Set this via 'databricks.oauth.client_secret'"},
-		{name: "explicit pat", db: &databaseImpl{authType: "pat", accessToken: "tok"}, want: "pat"},
-		{name: "explicit pat without token", db: &databaseImpl{authType: "pat"}, wantErr: "access token is required when using auth type 'pat'. Set this via 'databricks.access_token'"},
-		{name: "explicit pat ignores unrelated oauth options", db: &databaseImpl{authType: "pat", accessToken: "tok", oauthClientID: "id"}, want: "pat"},
-		{name: "explicit oauth-m2m", db: &databaseImpl{authType: "oauth-m2m", oauthClientID: "id", oauthClientSecret: "secret"}, want: "oauth-m2m"},
-		{name: "explicit oauth-m2m without client id", db: &databaseImpl{authType: "oauth-m2m", oauthClientSecret: "secret"}, wantErr: "client ID is required when using auth type 'oauth-m2m'. Set this via 'databricks.oauth.client_id'"},
-		{name: "explicit auth type with nothing else", db: &databaseImpl{authType: "oauth-m2m"}, wantErr: "client ID is required"},
+		{name: "token and client credentials", db: &databaseImpl{auth: authConfig{accessToken: "tok", oauthClientID: "id", oauthClientSecret: "secret"}}, wantErr: "cannot specify both access token and OAuth config"},
+		{name: "inferred oauth-m2m without secret", db: &databaseImpl{auth: authConfig{oauthClientID: "id"}}, wantErr: "client secret is required when using auth type 'oauth-m2m'. Set this via 'databricks.oauth.client_secret'"},
+		{name: "explicit pat", db: &databaseImpl{auth: authConfig{authType: "pat", accessToken: "tok"}}, want: "pat"},
+		{name: "explicit pat without token", db: &databaseImpl{auth: authConfig{authType: "pat"}}, wantErr: "access token is required when using auth type 'pat'. Set this via 'databricks.access_token'"},
+		{name: "explicit pat ignores unrelated oauth options", db: &databaseImpl{auth: authConfig{authType: "pat", accessToken: "tok", oauthClientID: "id"}}, want: "pat"},
+		{name: "explicit oauth-m2m", db: &databaseImpl{auth: authConfig{authType: "oauth-m2m", oauthClientID: "id", oauthClientSecret: "secret"}}, want: "oauth-m2m"},
+		{name: "explicit oauth-m2m without client id", db: &databaseImpl{auth: authConfig{authType: "oauth-m2m", oauthClientSecret: "secret"}}, wantErr: "client ID is required when using auth type 'oauth-m2m'. Set this via 'databricks.oauth.client_id'"},
+		{name: "explicit auth type with nothing else", db: &databaseImpl{auth: authConfig{authType: "oauth-m2m"}}, wantErr: "client ID is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -65,11 +65,11 @@ func TestResolveLoginMethod(t *testing.T) {
 }
 
 func TestResolveConnectionOptionsRequiresLogin(t *testing.T) {
-	db := &databaseImpl{serverHostname: "host", httpPath: "/sql/1.0/warehouses/w"}
+	db := &databaseImpl{conn: connConfig{serverHostname: "host", httpPath: "/sql/1.0/warehouses/w"}}
 	_, err := db.resolveConnectionOptions()
 	require.ErrorContains(t, err, "access token or OAuth config is required")
 
-	db.accessToken = "tok"
+	db.auth.accessToken = "tok"
 	opts, err := db.resolveConnectionOptions()
 	require.NoError(t, err)
 	require.NotEmpty(t, opts)
@@ -152,7 +152,7 @@ func TestOIDCFederation(t *testing.T) {
 	t.Run("env-oidc exchanges the ID token from the environment", func(t *testing.T) {
 		ws := newFakeWorkspace(t)
 		t.Setenv("DATABRICKS_OIDC_TOKEN", "id-token-from-env")
-		db := &databaseImpl{authType: "env-oidc", serverHostname: ws.URL, oidcClientID: "sp-client"}
+		db := &databaseImpl{conn: connConfig{serverHostname: ws.URL}, auth: authConfig{authType: "env-oidc", oidcClientID: "sp-client"}}
 
 		require.Equal(t, "Bearer exchanged-token", authorizationHeader(t, db.sdkConfig("env-oidc", loginMethods["env-oidc"].sdk)))
 		require.Len(t, ws.forms, 1)
@@ -164,7 +164,7 @@ func TestOIDCFederation(t *testing.T) {
 		ws := newFakeWorkspace(t)
 		path := filepath.Join(t.TempDir(), "token")
 		require.NoError(t, os.WriteFile(path, []byte("id-token-from-file"), 0o600))
-		db := &databaseImpl{authType: "file-oidc", serverHostname: ws.URL, oidcClientID: "sp-client", oidcTokenFilepath: path}
+		db := &databaseImpl{conn: connConfig{serverHostname: ws.URL}, auth: authConfig{authType: "file-oidc", oidcClientID: "sp-client", oidcTokenFilepath: path}}
 
 		require.Equal(t, "Bearer exchanged-token", authorizationHeader(t, db.sdkConfig("file-oidc", loginMethods["file-oidc"].sdk)))
 		require.Len(t, ws.forms, 1)
@@ -176,7 +176,7 @@ func TestOIDCFederation(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		require.NoError(t, os.WriteFile(path, []byte("id-token-from-env-path"), 0o600))
 		t.Setenv("DATABRICKS_OIDC_TOKEN_FILEPATH", path)
-		db := &databaseImpl{authType: "file-oidc", serverHostname: ws.URL, oidcClientID: "sp-client"}
+		db := &databaseImpl{conn: connConfig{serverHostname: ws.URL}, auth: authConfig{authType: "file-oidc", oidcClientID: "sp-client"}}
 
 		require.Equal(t, "Bearer exchanged-token", authorizationHeader(t, db.sdkConfig("file-oidc", loginMethods["file-oidc"].sdk)))
 		require.Equal(t, "id-token-from-env-path", ws.forms[0]["subject_token"])
@@ -187,14 +187,14 @@ func TestOIDCFederation(t *testing.T) {
 		t.Setenv("DATABRICKS_OIDC_TOKEN", "id-token-from-env")
 		t.Setenv("DATABRICKS_TOKEN", "pat-from-env")
 		t.Setenv("DATABRICKS_ACCOUNT_ID", "account")
-		db := &databaseImpl{authType: "env-oidc", serverHostname: ws.URL, oidcClientID: "sp-client"}
+		db := &databaseImpl{conn: connConfig{serverHostname: ws.URL}, auth: authConfig{authType: "env-oidc", oidcClientID: "sp-client"}}
 
 		require.Equal(t, "Bearer exchanged-token", authorizationHeader(t, db.sdkConfig("env-oidc", loginMethods["env-oidc"].sdk)))
 	})
 
 	t.Run("a missing token file fails the request, not the setup", func(t *testing.T) {
 		ws := newFakeWorkspace(t)
-		db := &databaseImpl{authType: "file-oidc", serverHostname: ws.URL, oidcClientID: "sp-client", oidcTokenFilepath: filepath.Join(t.TempDir(), "absent")}
+		db := &databaseImpl{conn: connConfig{serverHostname: ws.URL}, auth: authConfig{authType: "file-oidc", oidcClientID: "sp-client", oidcTokenFilepath: filepath.Join(t.TempDir(), "absent")}}
 		req, err := http.NewRequest(http.MethodGet, "http://example.invalid/", nil)
 		require.NoError(t, err)
 		require.Error(t, db.sdkConfig("file-oidc", loginMethods["file-oidc"].sdk).Authenticate(req))
@@ -205,12 +205,12 @@ func TestOIDCFederation(t *testing.T) {
 func TestResolveLoginMethodOIDC(t *testing.T) {
 	for _, name := range []string{"env-oidc", "file-oidc"} {
 		t.Run(name+" requires a client ID", func(t *testing.T) {
-			db := databaseImpl{authType: name}
+			db := databaseImpl{auth: authConfig{authType: name}}
 			_, _, err := db.resolveLoginMethod()
 			require.ErrorContains(t, err, "client ID is required when using auth type '"+name+"'. Set this via 'databricks.oidc.client_id'")
 		})
 		t.Run(name+" with a client ID", func(t *testing.T) {
-			db := databaseImpl{authType: name, oidcClientID: "sp-client"}
+			db := databaseImpl{auth: authConfig{authType: name, oidcClientID: "sp-client"}}
 			got, _, err := db.resolveLoginMethod()
 			require.NoError(t, err)
 			require.Equal(t, name, got)
@@ -218,7 +218,7 @@ func TestResolveLoginMethodOIDC(t *testing.T) {
 	}
 
 	t.Run("OIDC options alone do not select a method", func(t *testing.T) {
-		db := databaseImpl{oidcClientID: "sp-client"}
+		db := databaseImpl{auth: authConfig{oidcClientID: "sp-client"}}
 		_, _, err := db.resolveLoginMethod()
 		require.ErrorContains(t, err, "access token or OAuth config is required")
 	})
@@ -271,7 +271,7 @@ func TestOAuthScopesOption(t *testing.T) {
 		"":                         nil,
 	} {
 		require.NoError(t, db.SetOption(ctx, OptionOAuthScopes, value))
-		require.Equal(t, want, db.oauthScopes, "value %q", value)
+		require.Equal(t, want, db.auth.oauthScopes, "value %q", value)
 	}
 
 	// A bad value is rejected and leaves the existing setting alone.
@@ -294,25 +294,25 @@ func TestM2MAuthenticatorScopes(t *testing.T) {
 		return p.M2MScopes()
 	}
 
-	db := &databaseImpl{serverHostname: "https://host.example.com", oauthClientID: "id", oauthClientSecret: "secret"}
+	db := &databaseImpl{conn: connConfig{serverHostname: "https://host.example.com"}, auth: authConfig{oauthClientID: "id", oauthClientSecret: "secret"}}
 	require.Equal(t, []string{"all-apis"}, scopesOf(db), "no scopes keeps the default")
 
-	db.oauthScopes = []string{"sql"}
+	db.auth.oauthScopes = []string{"sql"}
 	require.Equal(t, []string{"sql"}, scopesOf(db))
 }
 
 func TestAzureClientSecret(t *testing.T) {
 	ctx := context.Background()
 	newFull := func() *databaseImpl {
-		return &databaseImpl{authType: "azure-client-secret", azureClientID: "app", azureClientSecret: "secret", azureTenantID: "tenant"}
+		return &databaseImpl{auth: authConfig{authType: "azure-client-secret", azureClientID: "app", azureClientSecret: "secret", azureTenantID: "tenant"}}
 	}
 	full := newFull()
 
 	t.Run("requires every option", func(t *testing.T) {
 		for option, clear := range map[string]func(*databaseImpl){
-			OptionAzureClientID:     func(d *databaseImpl) { d.azureClientID = "" },
-			OptionAzureClientSecret: func(d *databaseImpl) { d.azureClientSecret = "" },
-			OptionAzureTenantID:     func(d *databaseImpl) { d.azureTenantID = "" },
+			OptionAzureClientID:     func(d *databaseImpl) { d.auth.azureClientID = "" },
+			OptionAzureClientSecret: func(d *databaseImpl) { d.auth.azureClientSecret = "" },
+			OptionAzureTenantID:     func(d *databaseImpl) { d.auth.azureTenantID = "" },
 		} {
 			db := newFull()
 			clear(db)
@@ -326,7 +326,7 @@ func TestAzureClientSecret(t *testing.T) {
 
 	t.Run("builds an SDK config for Azure", func(t *testing.T) {
 		db := newFull()
-		db.serverHostname = "adb-123.4.azuredatabricks.net"
+		db.conn.serverHostname = "adb-123.4.azuredatabricks.net"
 		cfg := db.sdkConfig("azure-client-secret", loginMethods["azure-client-secret"].sdk)
 		require.Equal(t, "https://adb-123.4.azuredatabricks.net", cfg.Host)
 		require.Equal(t, "app", cfg.AzureClientID)
@@ -335,7 +335,7 @@ func TestAzureClientSecret(t *testing.T) {
 		require.Equal(t, "azure-client-secret", cfg.Credentials.Name())
 
 		// A custom host name is still treated as Azure.
-		db.serverHostname = "databricks.internal.example.com"
+		db.conn.serverHostname = "databricks.internal.example.com"
 		require.True(t, db.sdkConfig("azure-client-secret", loginMethods["azure-client-secret"].sdk).IsAzure())
 	})
 
@@ -356,7 +356,7 @@ func TestAzureClientSecret(t *testing.T) {
 	})
 
 	t.Run("Azure options alone do not select a method", func(t *testing.T) {
-		db := databaseImpl{azureClientID: "app", azureClientSecret: "secret", azureTenantID: "tenant"}
+		db := databaseImpl{auth: authConfig{azureClientID: "app", azureClientSecret: "secret", azureTenantID: "tenant"}}
 		_, _, err := db.resolveLoginMethod()
 		require.ErrorContains(t, err, "access token or OAuth config is required")
 	})
@@ -365,14 +365,8 @@ func TestAzureClientSecret(t *testing.T) {
 func TestSDKBackedMethods(t *testing.T) {
 	ctx := context.Background()
 	db := databaseImpl{
-		serverHostname:       "dbc-1.cloud.databricks.com",
-		azureClientID:        "identity",
-		azureClientSecret:    "azure-secret",
-		azureTenantID:        "tenant",
-		googleCredentials:    "/keys/sa.json",
-		googleServiceAccount: "sa@p.iam.gserviceaccount.com",
-		oidcClientID:         "sp-client",
-		oidcTokenFilepath:    "/var/run/token",
+		conn: connConfig{serverHostname: "dbc-1.cloud.databricks.com"},
+		auth: authConfig{azureClientID: "identity", azureClientSecret: "azure-secret", azureTenantID: "tenant", googleCredentials: "/keys/sa.json", googleServiceAccount: "sa@p.iam.gserviceaccount.com", oidcClientID: "sp-client", oidcTokenFilepath: "/var/run/token"},
 	}
 
 	// Every SDK-backed method names its credential after its auth type, and
@@ -412,17 +406,17 @@ func TestSDKBackedMethods(t *testing.T) {
 
 	t.Run("azure-msi and azure-cli need no options", func(t *testing.T) {
 		for _, name := range []string{"azure-msi", "azure-cli"} {
-			got, _, err := (&databaseImpl{authType: name}).resolveLoginMethod()
+			got, _, err := (&databaseImpl{auth: authConfig{authType: name}}).resolveLoginMethod()
 			require.NoError(t, err)
 			require.Equal(t, name, got)
 		}
 	})
 
 	t.Run("google methods require their option", func(t *testing.T) {
-		_, _, err := (&databaseImpl{authType: "google-credentials"}).resolveLoginMethod()
+		_, _, err := (&databaseImpl{auth: authConfig{authType: "google-credentials"}}).resolveLoginMethod()
 		require.ErrorContains(t, err, "google credentials is required when using auth type 'google-credentials'. Set this via 'databricks.google.credentials'")
 
-		_, _, err = (&databaseImpl{authType: "google-id"}).resolveLoginMethod()
+		_, _, err = (&databaseImpl{auth: authConfig{authType: "google-id"}}).resolveLoginMethod()
 		require.ErrorContains(t, err, "google service account is required when using auth type 'google-id'. Set this via 'databricks.google.service_account'")
 	})
 

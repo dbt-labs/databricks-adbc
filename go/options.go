@@ -81,14 +81,14 @@ var databaseOptions = map[string]optionDef{
 					Msg:  fmt.Sprintf("invalid URI scheme: expected 'databricks://', got '%s'", value),
 				}
 			}
-			d.uri = after
+			d.conn.uri = after
 			return nil
 		},
-		get: func(d *databaseImpl) string { return d.uri },
+		get: func(d *databaseImpl) string { return d.conn.uri },
 	},
-	OptionServerHostname: stringOption(func(d *databaseImpl) *string { return &d.serverHostname }),
-	OptionHTTPPath:       stringOption(func(d *databaseImpl) *string { return &d.httpPath }),
-	OptionAccessToken:    stringOption(func(d *databaseImpl) *string { return &d.accessToken }),
+	OptionServerHostname: stringOption(func(d *databaseImpl) *string { return &d.conn.serverHostname }),
+	OptionHTTPPath:       stringOption(func(d *databaseImpl) *string { return &d.conn.httpPath }),
+	OptionAccessToken:    stringOption(func(d *databaseImpl) *string { return &d.auth.accessToken }),
 	OptionAuthType: {
 		set: func(d *databaseImpl, value string) error {
 			if _, ok := loginMethods[value]; !ok && value != "" {
@@ -97,12 +97,12 @@ var databaseOptions = map[string]optionDef{
 					Msg:  fmt.Sprintf("[db] unknown auth type '%s'", value),
 				}
 			}
-			d.authType = value
+			d.auth.authType = value
 			return nil
 		},
-		get: func(d *databaseImpl) string { return d.authType },
+		get: func(d *databaseImpl) string { return d.auth.authType },
 	},
-	OptionUserAgent: stringOption(func(d *databaseImpl) *string { return &d.userAgent }),
+	OptionUserAgent: stringOption(func(d *databaseImpl) *string { return &d.conn.userAgent }),
 	OptionPort: {
 		set: func(d *databaseImpl, value string) error {
 			port, err := strconv.Atoi(value)
@@ -112,13 +112,13 @@ var databaseOptions = map[string]optionDef{
 					Msg:  "invalid port number",
 				}
 			}
-			d.port = port
+			d.conn.port = port
 			return nil
 		},
-		get: func(d *databaseImpl) string { return strconv.Itoa(d.port) },
+		get: func(d *databaseImpl) string { return strconv.Itoa(d.conn.port) },
 	},
-	OptionCatalog: stringOption(func(d *databaseImpl) *string { return &d.catalog }),
-	OptionSchema:  stringOption(func(d *databaseImpl) *string { return &d.schema }),
+	OptionCatalog: stringOption(func(d *databaseImpl) *string { return &d.conn.catalog }),
+	OptionSchema:  stringOption(func(d *databaseImpl) *string { return &d.conn.schema }),
 	OptionQueryTimeout: {
 		set: func(d *databaseImpl, value string) error {
 			if value == "" {
@@ -131,34 +131,34 @@ var databaseOptions = map[string]optionDef{
 					Msg:  fmt.Sprintf("invalid query timeout: %v", err),
 				}
 			}
-			d.queryTimeout = timeout
+			d.query.queryTimeout = timeout
 			return nil
 		},
 		get: func(d *databaseImpl) string {
-			if d.queryTimeout > 0 {
-				return d.queryTimeout.String()
+			if d.query.queryTimeout > 0 {
+				return d.query.queryTimeout.String()
 			}
 			return ""
 		},
 	},
-	OptionMaxRows:             intOption("max rows", func(d *databaseImpl) *int { return &d.maxRows }),
-	OptionQueryRetryCount:     intOption("query retry count", func(d *databaseImpl) *int { return &d.queryRetryCount }),
-	OptionDownloadThreadCount: intOption("download thread count", func(d *databaseImpl) *int { return &d.downloadThreadCount }),
+	OptionMaxRows:             intOption("max rows", func(d *databaseImpl) *int { return &d.query.maxRows }),
+	OptionQueryRetryCount:     intOption("query retry count", func(d *databaseImpl) *int { return &d.query.queryRetryCount }),
+	OptionDownloadThreadCount: intOption("download thread count", func(d *databaseImpl) *int { return &d.query.downloadThreadCount }),
 	OptionSSLMode: {
 		set: func(d *databaseImpl, value string) error {
 			if value == "" {
-				d.sslMode = value
-				d.sslInsecure = false
+				d.tls.sslMode = value
+				d.tls.sslInsecure = false
 				return nil
 			}
 			lowerValue := strings.ToLower(value)
 			switch lowerValue {
 			case "insecure":
-				d.sslMode = lowerValue
-				d.sslInsecure = true
+				d.tls.sslMode = lowerValue
+				d.tls.sslInsecure = true
 			case "require":
-				d.sslMode = lowerValue
-				d.sslInsecure = false
+				d.tls.sslMode = lowerValue
+				d.tls.sslInsecure = false
 			default:
 				return adbc.Error{
 					Code: adbc.StatusInvalidArgument,
@@ -167,13 +167,13 @@ var databaseOptions = map[string]optionDef{
 			}
 			return nil
 		},
-		get: func(d *databaseImpl) string { return d.sslMode },
+		get: func(d *databaseImpl) string { return d.tls.sslMode },
 	},
 	OptionSSLRootCert: {
 		set: func(d *databaseImpl, value string) error {
 			if value == "" {
-				d.sslRootCert = value
-				d.sslCertPool = nil
+				d.tls.sslRootCert = value
+				d.tls.sslCertPool = nil
 				return nil
 			}
 			// Validate that the certificate file exists and can be read.
@@ -194,31 +194,31 @@ var databaseOptions = map[string]optionDef{
 				}
 			}
 
-			d.sslRootCert = value
-			d.sslCertPool = caCertPool
+			d.tls.sslRootCert = value
+			d.tls.sslCertPool = caCertPool
 			return nil
 		},
-		get: func(d *databaseImpl) string { return d.sslRootCert },
+		get: func(d *databaseImpl) string { return d.tls.sslRootCert },
 	},
-	OptionOAuthClientID:        stringOption(func(d *databaseImpl) *string { return &d.oauthClientID }),
-	OptionOAuthClientSecret:    stringOption(func(d *databaseImpl) *string { return &d.oauthClientSecret }),
-	OptionOAuthRefreshToken:    stringOption(func(d *databaseImpl) *string { return &d.oauthRefreshToken }),
-	OptionAzureClientID:        stringOption(func(d *databaseImpl) *string { return &d.azureClientID }),
-	OptionAzureClientSecret:    stringOption(func(d *databaseImpl) *string { return &d.azureClientSecret }),
-	OptionAzureTenantID:        stringOption(func(d *databaseImpl) *string { return &d.azureTenantID }),
-	OptionGoogleCredentials:    stringOption(func(d *databaseImpl) *string { return &d.googleCredentials }),
-	OptionGoogleServiceAccount: stringOption(func(d *databaseImpl) *string { return &d.googleServiceAccount }),
-	OptionOIDCClientID:         stringOption(func(d *databaseImpl) *string { return &d.oidcClientID }),
-	OptionOIDCTokenFilepath:    stringOption(func(d *databaseImpl) *string { return &d.oidcTokenFilepath }),
+	OptionOAuthClientID:        stringOption(func(d *databaseImpl) *string { return &d.auth.oauthClientID }),
+	OptionOAuthClientSecret:    stringOption(func(d *databaseImpl) *string { return &d.auth.oauthClientSecret }),
+	OptionOAuthRefreshToken:    stringOption(func(d *databaseImpl) *string { return &d.auth.oauthRefreshToken }),
+	OptionAzureClientID:        stringOption(func(d *databaseImpl) *string { return &d.auth.azureClientID }),
+	OptionAzureClientSecret:    stringOption(func(d *databaseImpl) *string { return &d.auth.azureClientSecret }),
+	OptionAzureTenantID:        stringOption(func(d *databaseImpl) *string { return &d.auth.azureTenantID }),
+	OptionGoogleCredentials:    stringOption(func(d *databaseImpl) *string { return &d.auth.googleCredentials }),
+	OptionGoogleServiceAccount: stringOption(func(d *databaseImpl) *string { return &d.auth.googleServiceAccount }),
+	OptionOIDCClientID:         stringOption(func(d *databaseImpl) *string { return &d.auth.oidcClientID }),
+	OptionOIDCTokenFilepath:    stringOption(func(d *databaseImpl) *string { return &d.auth.oidcTokenFilepath }),
 	OptionOAuthRedirectURL: {
 		set: func(d *databaseImpl, value string) error {
 			if err := validateBrowserRedirectURL(value); err != nil {
 				return err
 			}
-			d.oauthRedirectURL = value
+			d.auth.oauthRedirectURL = value
 			return nil
 		},
-		get: func(d *databaseImpl) string { return d.oauthRedirectURL },
+		get: func(d *databaseImpl) string { return d.auth.oauthRedirectURL },
 	},
 	OptionOAuthScopes: {
 		set: func(d *databaseImpl, value string) error {
@@ -226,15 +226,15 @@ var databaseOptions = map[string]optionDef{
 			if err != nil {
 				return err
 			}
-			d.oauthScopes = scopes
+			d.auth.oauthScopes = scopes
 			return nil
 		},
-		get: func(d *databaseImpl) string { return strings.Join(d.oauthScopes, " ") },
+		get: func(d *databaseImpl) string { return strings.Join(d.auth.oauthScopes, " ") },
 	},
 	OptionExternalBrowserTimeout: {
 		set: func(d *databaseImpl, value string) error {
 			if value == "" {
-				d.oauthU2MTimeout = 0
+				d.auth.oauthU2MTimeout = 0
 				return nil
 			}
 			timeout, err := time.ParseDuration(value)
@@ -244,12 +244,12 @@ var databaseOptions = map[string]optionDef{
 					Msg:  fmt.Sprintf("[db] invalid external browser timeout '%s': must be a positive duration such as '2m'", value),
 				}
 			}
-			d.oauthU2MTimeout = timeout
+			d.auth.oauthU2MTimeout = timeout
 			return nil
 		},
 		get: func(d *databaseImpl) string {
-			if d.oauthU2MTimeout > 0 {
-				return d.oauthU2MTimeout.String()
+			if d.auth.oauthU2MTimeout > 0 {
+				return d.auth.oauthU2MTimeout.String()
 			}
 			return ""
 		},
