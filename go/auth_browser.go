@@ -107,6 +107,10 @@ type browserLoginConfig struct {
 	redirectURL string
 	timeout     time.Duration
 
+	// tokenCacheDir holds the on-disk token cache and login lease. Empty means
+	// the default directory (see defaultTokenCacheDir).
+	tokenCacheDir string
+
 	// Seams for tests; nil means the real implementation.
 	resolveConfig func(ctx context.Context, c browserLoginConfig) (oauth2.Config, error)
 	openBrowser   func(loginURL string) error
@@ -151,6 +155,16 @@ type browserAuthenticator struct {
 	mu          sync.Mutex
 	oauthConfig *oauth2.Config
 	tokenSource oauth2.TokenSource
+
+	cache        *tokenCache // nil when no cache directory is available
+	lastSaved    string      // access token last written to the cache
+	cacheWarning bool
+
+	// refreshToken is the refresh token of the token source in use, and
+	// rejected the last one the identity provider refused; a rejected token is
+	// not tried again from the cache.
+	refreshToken string
+	rejected     string
 }
 
 func newBrowserAuthenticator(cfg browserLoginConfig) *browserAuthenticator {
@@ -166,7 +180,15 @@ func newBrowserAuthenticator(cfg browserLoginConfig) *browserAuthenticator {
 	if cfg.out == nil {
 		cfg.out = os.Stdout
 	}
-	return &browserAuthenticator{cfg: cfg}
+	a := &browserAuthenticator{cfg: cfg}
+	dir := cfg.tokenCacheDir
+	if dir == "" {
+		dir = defaultTokenCacheDir()
+	}
+	if cache, err := newTokenCache(dir); err == nil {
+		a.cache = cache
+	}
+	return a
 }
 
 // Authenticate adds a bearer token to the request. The first call runs the
@@ -180,10 +202,13 @@ func (a *browserAuthenticator) Authenticate(r *http.Request) error {
 	if a.tokenSource != nil {
 		token, err := a.tokenSource.Token()
 		if err == nil {
+			a.refreshToken = token.RefreshToken
+			a.save(token) // keeps the cache current after a refresh
 			token.SetAuthHeader(r)
 			return nil
 		}
 		// The refresh token no longer works: sign in again.
+		a.rejected = a.refreshToken
 		a.tokenSource = nil
 	}
 
@@ -195,6 +220,10 @@ func (a *browserAuthenticator) Authenticate(r *http.Request) error {
 	return nil
 }
 
+// login returns a token for the first request or after a failed refresh. It
+// prefers, in order: the cached token (refreshed when it is stale), then a
+// browser login. Logins are serialised across processes by the lease, so that
+// one process opens the browser and the others pick up the token it caches.
 func (a *browserAuthenticator) login(ctx context.Context) (*oauth2.Token, error) {
 	if a.oauthConfig == nil {
 		conf, err := a.cfg.resolveConfig(ctx, a.cfg)
@@ -203,12 +232,68 @@ func (a *browserAuthenticator) login(ctx context.Context) (*oauth2.Token, error)
 		}
 		a.oauthConfig = &conf
 	}
+	if token := a.fromCache(ctx); token != nil {
+		return token, nil
+	}
+	if a.cache != nil {
+		lease, err := a.cache.acquireLease(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer lease.release()
+		defer lease.keepAlive(leaseTTL)()
+		// Another process may have finished its login while we waited.
+		if token := a.fromCache(ctx); token != nil {
+			return token, nil
+		}
+	}
 	token, err := a.runBrowserFlow(ctx, *a.oauthConfig)
 	if err != nil {
 		return nil, err
 	}
 	a.tokenSource = a.oauthConfig.TokenSource(ctx, token)
+	a.refreshToken = token.RefreshToken
+	a.save(token)
 	return token, nil
+}
+
+// fromCache returns a usable token from the cache, refreshing it with the
+// stored refresh token when the access token has expired. It returns nil when
+// there is nothing usable.
+func (a *browserAuthenticator) fromCache(ctx context.Context) *oauth2.Token {
+	if a.cache == nil {
+		return nil
+	}
+	cached := a.cache.read(a.cfg.host, a.cfg.clientID)
+	if cached == nil || (cached.RefreshToken != "" && cached.RefreshToken == a.rejected && !cached.Valid()) {
+		return nil
+	}
+	source := a.oauthConfig.TokenSource(ctx, cached)
+	token, err := source.Token()
+	if err != nil {
+		a.rejected = cached.RefreshToken
+		return nil
+	}
+	a.tokenSource = source
+	a.refreshToken = token.RefreshToken
+	a.save(token)
+	return token
+}
+
+// save writes the token to the cache when it changed. A failure does not stop
+// the login; it is reported once.
+func (a *browserAuthenticator) save(token *oauth2.Token) {
+	if a.cache == nil || token.AccessToken == a.lastSaved {
+		return
+	}
+	if err := a.cache.write(a.cfg.host, a.cfg.clientID, token); err != nil {
+		if !a.cacheWarning {
+			a.cacheWarning = true
+			_, _ = fmt.Fprintf(a.cfg.out, "Warning: could not cache the login token: %v\n", err)
+		}
+		return
+	}
+	a.lastSaved = token.AccessToken
 }
 
 type callbackResult struct {
