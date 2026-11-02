@@ -176,3 +176,31 @@ func TestSessionParamsReachConnectorOptions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{"ansi_mode": "false"}, db.sessionParams)
 }
+
+func TestUserAgentOption(t *testing.T) {
+	ctx := context.Background()
+	db := newSessionParamDatabase()
+
+	got, err := db.GetOption(ctx, OptionUserAgent)
+	require.NoError(t, err)
+	require.Equal(t, "", got)
+	base, err := db.resolveConnectionOptions()
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetOption(ctx, OptionUserAgent, "dbt"))
+	got, err = db.GetOption(ctx, OptionUserAgent)
+	require.NoError(t, err)
+	require.Equal(t, "dbt", got)
+
+	opts, err := db.resolveConnectionOptions()
+	require.NoError(t, err)
+	require.Equal(t, len(base)+1, len(opts), "a user agent adds one connector option")
+	_, err = dbsql.NewConnector(opts...)
+	require.NoError(t, err)
+
+	// An empty value clears it and adds nothing.
+	require.NoError(t, db.SetOption(ctx, OptionUserAgent, ""))
+	opts, err = db.resolveConnectionOptions()
+	require.NoError(t, err)
+	require.Equal(t, len(base), len(opts))
+}

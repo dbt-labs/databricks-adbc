@@ -71,6 +71,7 @@ type databaseImpl struct {
 	httpPath       string
 	accessToken    string
 	authType       string
+	userAgent      string
 	port           int
 	catalog        string
 	schema         string
@@ -140,6 +141,11 @@ func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
 		dbsql.WithHTTPPath(d.httpPath),
 		dbsql.WithArrowNativeDecimal(true),
 		login.connOption(loginName, d),
+	}
+
+	// Client name appended to the User-Agent of the requests the driver makes
+	if d.userAgent != "" {
+		opts = append(opts, dbsql.WithUserAgentEntry(d.userAgent))
 	}
 
 	// Validate and set custom port
@@ -364,6 +370,8 @@ func (d *databaseImpl) GetOption(ctx context.Context, key string) (string, error
 		return d.accessToken, nil
 	case OptionAuthType:
 		return d.authType, nil
+	case OptionUserAgent:
+		return d.userAgent, nil
 	case OptionPort:
 		return strconv.Itoa(d.port), nil
 	case OptionCatalog:
@@ -499,6 +507,8 @@ func (d *databaseImpl) SetOption(ctx context.Context, key, value string) error {
 			}
 		}
 		d.authType = value
+	case OptionUserAgent:
+		d.userAgent = value
 	case OptionPort:
 		port, err := strconv.Atoi(value)
 		if err != nil || port < 1 || port > 65535 {
