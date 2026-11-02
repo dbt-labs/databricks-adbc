@@ -129,6 +129,11 @@ Examples:
 
   If not set, the method is inferred: `pat` when `databricks.access_token` is set, `oauth-m2m` when a client ID or secret is set. Setting both an access token and OAuth options without `databricks.auth_type` is an error. If set, options that belong to other methods are ignored.
 
+`databricks.oauth.redirect_url`
+: **Values:** a loopback address with a port, such as `localhost:9000` or `http://localhost:9000/callback`. **Default:** `localhost:8020`
+
+  Where `external-browser` login listens for the redirect. Use it when port 8020 is taken or your OAuth app registers another redirect. The same URL must be registered on the OAuth app.
+
 `databricks.oauth.scopes`
 : **Values:** scopes separated by spaces or commas, such as `all-apis offline_access`. **Default:** (empty)
 

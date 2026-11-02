@@ -26,10 +26,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/databricks/databricks-sql-go/auth"
 	"github.com/databricks/databricks-sql-go/auth/oauth"
 	"github.com/databricks/databricks-sql-go/auth/oauth/u2m"
@@ -43,6 +45,12 @@ const (
 	// OptionValueAuthTypeExternalBrowser selects browser (user-to-machine
 	// OAuth) login for databricks.auth_type.
 	OptionValueAuthTypeExternalBrowser = "external-browser"
+
+	// OptionOAuthRedirectURL is the local address external-browser login
+	// listens on for the redirect, such as "localhost:9000" or
+	// "http://localhost:9000/callback". It must be registered on the OAuth app.
+	// The default is "localhost:8020".
+	OptionOAuthRedirectURL = "databricks.oauth.redirect_url"
 
 	// OptionOAuthScopes lists the scopes external-browser login asks for, in
 	// addition to the ones the driver always needs (offline_access and the
@@ -86,10 +94,11 @@ var externalBrowserMethod = loginMethod{
 // from the database options. Nothing is contacted until the first request.
 func (d *databaseImpl) newBrowserAuthenticator() auth.Authenticator {
 	return newBrowserAuthenticator(browserLoginConfig{
-		host:     d.serverHostname,
-		clientID: d.oauthClientID,
-		scopes:   d.oauthScopes,
-		timeout:  d.oauthU2MTimeout,
+		host:        d.serverHostname,
+		clientID:    d.oauthClientID,
+		scopes:      d.oauthScopes,
+		redirectURL: d.oauthRedirectURL,
+		timeout:     d.oauthU2MTimeout,
 	})
 }
 
@@ -329,6 +338,41 @@ func writeBrowserPage(w http.ResponseWriter, title, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprintf(w, "<!doctype html><html><head><title>%s</title></head><body><h2>%s</h2><p>%s</p></body></html>",
 		html.EscapeString(title), html.EscapeString(title), html.EscapeString(msg))
+}
+
+// validateBrowserRedirectURL checks that the redirect address can be listened
+// on: a loopback host with an explicit port. An empty value means the default.
+func validateBrowserRedirectURL(value string) error {
+	if value == "" {
+		return nil
+	}
+	invalid := func(why string) error {
+		return adbc.Error{
+			Code: adbc.StatusInvalidArgument,
+			Msg:  fmt.Sprintf("[db] invalid OAuth redirect URL '%s': %s", value, why),
+		}
+	}
+	raw := value
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return invalid("not a valid URL")
+	}
+	if u.Scheme != "http" {
+		return invalid("the scheme must be http")
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+	default:
+		return invalid("the host must be localhost, 127.0.0.1 or ::1")
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return invalid("a port between 1 and 65535 is required")
+	}
+	return nil
 }
 
 // parseScopes splits a scope list on spaces and commas, dropping empty entries
