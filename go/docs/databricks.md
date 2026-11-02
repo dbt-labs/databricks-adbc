@@ -119,14 +119,20 @@ Examples:
 ### Authentication Options
 
 `databricks.auth_type`
-: **Values:** `pat`, `oauth-m2m`. **Default:** (empty, inferred from the options that are set)
+: **Values:** `pat`, `oauth-m2m`, `external-browser`. **Default:** (empty, inferred from the options that are set)
 
   How to authenticate.
 
   - `pat`: personal access token. Requires `databricks.access_token`.
   - `oauth-m2m`: OAuth machine-to-machine. Requires `databricks.oauth.client_id` and `databricks.oauth.client_secret`.
+  - `external-browser`: OAuth user-to-machine (U2M) login through the system browser. The driver prints the login URL and tries to open it, then waits for the redirect on `localhost:8020`. It is never inferred: set `databricks.auth_type` explicitly.
 
   If not set, the method is inferred: `pat` when `databricks.access_token` is set, `oauth-m2m` when a client ID or secret is set. Setting both an access token and OAuth options without `databricks.auth_type` is an error. If set, options that belong to other methods are ignored.
+
+`databricks.oauth.external_browser.timeout`
+: **Values:** a positive Go duration such as `90s` or `2m`. **Default:** `1m`
+
+  How long `external-browser` login waits for the sign-in to finish before it fails.
 
 ## Feature & Type Support
 

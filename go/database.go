@@ -82,6 +82,7 @@ type databaseImpl struct {
 	oauthClientID     string
 	oauthClientSecret string
 	oauthRefreshToken string
+	oauthU2MTimeout   time.Duration
 }
 
 func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
@@ -338,6 +339,11 @@ func (d *databaseImpl) GetOption(ctx context.Context, key string) (string, error
 		return d.oauthClientSecret, nil
 	case OptionOAuthRefreshToken:
 		return d.oauthRefreshToken, nil
+	case OptionExternalBrowserTimeout:
+		if d.oauthU2MTimeout > 0 {
+			return d.oauthU2MTimeout.String(), nil
+		}
+		return "", nil
 	default:
 		return d.DatabaseImplBase.GetOption(ctx, key)
 	}
@@ -512,6 +518,19 @@ func (d *databaseImpl) SetOption(ctx context.Context, key, value string) error {
 		d.oauthClientSecret = value
 	case OptionOAuthRefreshToken:
 		d.oauthRefreshToken = value
+	case OptionExternalBrowserTimeout:
+		if value == "" {
+			d.oauthU2MTimeout = 0
+			break
+		}
+		timeout, err := time.ParseDuration(value)
+		if err != nil || timeout <= 0 {
+			return adbc.Error{
+				Code: adbc.StatusInvalidArgument,
+				Msg:  fmt.Sprintf("[db] invalid external browser timeout '%s': must be a positive duration such as '2m'", value),
+			}
+		}
+		d.oauthU2MTimeout = timeout
 	default:
 		return d.DatabaseImplBase.SetOption(ctx, key, value)
 	}
