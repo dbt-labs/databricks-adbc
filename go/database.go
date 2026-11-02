@@ -82,6 +82,10 @@ type databaseImpl struct {
 	oauthClientID     string
 	oauthClientSecret string
 	oauthRefreshToken string
+
+	// OIDC token federation options
+	oidcClientID      string
+	oidcTokenFilepath string
 }
 
 func (d *databaseImpl) resolveConnectionOptions() ([]dbsql.ConnOption, error) {
@@ -338,6 +342,10 @@ func (d *databaseImpl) GetOption(ctx context.Context, key string) (string, error
 		return d.oauthClientSecret, nil
 	case OptionOAuthRefreshToken:
 		return d.oauthRefreshToken, nil
+	case OptionOIDCClientID:
+		return d.oidcClientID, nil
+	case OptionOIDCTokenFilepath:
+		return d.oidcTokenFilepath, nil
 	default:
 		return d.DatabaseImplBase.GetOption(ctx, key)
 	}
@@ -512,6 +520,10 @@ func (d *databaseImpl) SetOption(ctx context.Context, key, value string) error {
 		d.oauthClientSecret = value
 	case OptionOAuthRefreshToken:
 		d.oauthRefreshToken = value
+	case OptionOIDCClientID:
+		d.oidcClientID = value
+	case OptionOIDCTokenFilepath:
+		d.oidcTokenFilepath = value
 	default:
 		return d.DatabaseImplBase.SetOption(ctx, key, value)
 	}

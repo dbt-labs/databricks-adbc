@@ -16,8 +16,10 @@ package databricks
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/apache/arrow-adbc/go/adbc"
+	sdkconfig "github.com/databricks/databricks-sdk-go/config"
 	dbsql "github.com/databricks/databricks-sql-go"
 )
 
@@ -54,6 +56,54 @@ var loginMethods = map[string]loginMethod{
 			return dbsql.WithClientCredentials(d.oauthClientID, d.oauthClientSecret)
 		},
 	},
+	// OIDC token federation, spelled as in dbt-databricks. The ID token is
+	// exchanged for a Databricks token by the Databricks SDK.
+	OptionValueAuthTypeEnvOIDC: {
+		required: []authField{oidcClientIDField},
+		build: func(d *databaseImpl) dbsql.ConnOption {
+			return dbsql.WithAuthenticator(d.oidcConfig(OptionValueAuthTypeEnvOIDC))
+		},
+	},
+	OptionValueAuthTypeFileOIDC: {
+		required: []authField{oidcClientIDField},
+		build: func(d *databaseImpl) dbsql.ConnOption {
+			return dbsql.WithAuthenticator(d.oidcConfig(OptionValueAuthTypeFileOIDC))
+		},
+	},
+}
+
+var oidcClientIDField = authField{OptionOIDCClientID, "client ID", func(d *databaseImpl) string { return d.oidcClientID }}
+
+// sdkConfig returns an SDK config for the workspace, to be used as the SQL
+// client's authenticator. The config resolves itself on the first request, so
+// a bad value surfaces when the connection is opened. Only environment
+// variables are read, never ~/.databrickscfg, so a profile on disk cannot
+// change the login method.
+func (d *databaseImpl) sdkConfig() *sdkconfig.Config {
+	host := d.serverHostname
+	if !strings.HasPrefix(host, "https://") && !strings.HasPrefix(host, "http://") {
+		host = "https://" + host
+	}
+	return &sdkconfig.Config{
+		Host:    host,
+		Loaders: []sdkconfig.Loader{sdkconfig.ConfigAttributes},
+	}
+}
+
+// oidcConfig builds the SDK credential that reads the ID token from an
+// environment variable (env-oidc) or a file (file-oidc).
+func (d *databaseImpl) oidcConfig(name string) *sdkconfig.Config {
+	cfg := d.sdkConfig()
+	cfg.ClientID = d.oidcClientID
+	cfg.AuthType = name
+	if name == OptionValueAuthTypeEnvOIDC {
+		cfg.Credentials = sdkconfig.EnvOIDCCredentials{}
+	} else {
+		cfg.Credentials = sdkconfig.FileOIDCCredentials{}
+		// When unset, the SDK falls back to DATABRICKS_OIDC_TOKEN_FILEPATH.
+		cfg.OIDCTokenFilepath = d.oidcTokenFilepath
+	}
+	return cfg
 }
 
 // resolveLoginMethod picks the login method for the configured options and
