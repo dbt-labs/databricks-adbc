@@ -81,6 +81,7 @@ type databaseImpl struct {
 	// OAuth options
 	oauthClientID     string
 	oauthClientSecret string
+	oauthScopes       []string
 	oauthRefreshToken string
 }
 
@@ -336,6 +337,8 @@ func (d *databaseImpl) GetOption(ctx context.Context, key string) (string, error
 		return d.oauthClientID, nil
 	case OptionOAuthClientSecret:
 		return d.oauthClientSecret, nil
+	case OptionOAuthScopes:
+		return strings.Join(d.oauthScopes, " "), nil
 	case OptionOAuthRefreshToken:
 		return d.oauthRefreshToken, nil
 	default:
@@ -510,6 +513,12 @@ func (d *databaseImpl) SetOption(ctx context.Context, key, value string) error {
 		d.oauthClientID = value
 	case OptionOAuthClientSecret:
 		d.oauthClientSecret = value
+	case OptionOAuthScopes:
+		scopes, err := parseScopes(value)
+		if err != nil {
+			return err
+		}
+		d.oauthScopes = scopes
 	case OptionOAuthRefreshToken:
 		d.oauthRefreshToken = value
 	default:

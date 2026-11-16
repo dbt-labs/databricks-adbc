@@ -94,3 +94,67 @@ func TestAuthTypeOption(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "", got)
 }
+
+func TestOAuthScopesOption(t *testing.T) {
+	ctx := context.Background()
+	db := &databaseImpl{}
+
+	got, err := db.GetOption(ctx, OptionOAuthScopes)
+	require.NoError(t, err)
+	require.Equal(t, "", got)
+
+	// Commas and any whitespace, including a CRLF line ending, separate scopes.
+	require.NoError(t, db.SetOption(ctx, OptionOAuthScopes, "sql, offline_access\r\n"))
+	require.Equal(t, []string{"sql", "offline_access"}, db.oauthScopes)
+	got, err = db.GetOption(ctx, OptionOAuthScopes)
+	require.NoError(t, err)
+	require.Equal(t, "sql offline_access", got)
+
+	require.NoError(t, db.SetOption(ctx, OptionOAuthScopes, ""))
+	require.Empty(t, db.oauthScopes)
+
+	// A bad value is rejected and leaves the existing setting alone.
+	require.NoError(t, db.SetOption(ctx, OptionOAuthScopes, "sql"))
+	err = db.SetOption(ctx, OptionOAuthScopes, `sql "quoted"`)
+	require.ErrorContains(t, err, "invalid OAuth scope")
+	var adbcErr adbc.Error
+	require.ErrorAs(t, err, &adbcErr)
+	require.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+	got, err = db.GetOption(ctx, OptionOAuthScopes)
+	require.NoError(t, err)
+	require.Equal(t, "sql", got)
+}
+
+func TestM2MAuthenticatorScopes(t *testing.T) {
+	// sql-go's authenticator type is private, so the scopes it will request are
+	// read through its M2MScopes method.
+	scopesOf := func(db *databaseImpl) []string {
+		p, ok := db.newM2MAuthenticator().(interface{ M2MScopes() []string })
+		require.True(t, ok)
+		return p.M2MScopes()
+	}
+
+	// dbsql.WithClientCredentials, used before this option existed, asks for
+	// "all-apis"; that stays the default when no scopes are set.
+	db := &databaseImpl{serverHostname: "https://host.example.com", oauthClientID: "id", oauthClientSecret: "secret"}
+	require.Equal(t, []string{"all-apis"}, scopesOf(db))
+
+	db.oauthScopes = []string{"sql"}
+	require.Equal(t, []string{"sql"}, scopesOf(db))
+
+	creds, ok := db.newM2MAuthenticator().(interface{ M2MCredentials() (string, string) })
+	require.True(t, ok)
+	id, secret := creds.M2MCredentials()
+	require.Equal(t, [2]string{"id", "secret"}, [2]string{id, secret})
+}
+
+func TestSplitHost(t *testing.T) {
+	for host, want := range map[string][2]string{
+		"adb-1.azuredatabricks.net":         {"https", "adb-1.azuredatabricks.net"},
+		"https://adb-1.azuredatabricks.net": {"https", "adb-1.azuredatabricks.net"},
+		"HTTP://localhost":                  {"http", "localhost"},
+	} {
+		scheme, name := splitHost(host)
+		require.Equal(t, want, [2]string{scheme, name}, host)
+	}
+}
